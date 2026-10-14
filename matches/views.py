@@ -359,7 +359,7 @@ class MatchDetailView(DetailView):
         has_match_statistics = any(row['home'] is not None or row['away'] is not None for row in stat_rows)
 
         # Форма команд на момент матча.
-        from teams.services import get_team_form, get_pre_match_standings_snapshot
+        from teams.services import get_pre_match_standings_snapshot
 
         # Турнирная таблица на момент матча.
         standings_snapshot = get_pre_match_standings_snapshot(match)
@@ -385,16 +385,7 @@ class MatchDetailView(DetailView):
                 } for m in h2h_matches
             ])
 
-        home_recent = Match.objects.filter(
-            Q(home_team=match.home_team) | Q(away_team=match.home_team),
-            status='finished', start_time__lt=match.start_time,
-        ).select_related('home_team', 'away_team').order_by('-start_time')[:5]
-        away_recent = Match.objects.filter(
-            Q(home_team=match.away_team) | Q(away_team=match.away_team),
-            status='finished', start_time__lt=match.start_time,
-        ).select_related('home_team', 'away_team').order_by('-start_time')[:5]
-        home_team_form = get_team_form(match.home_team, home_recent)
-        away_team_form = get_team_form(match.away_team, away_recent)
+        home_team_form, away_team_form = action_context['home_team_form'], action_context['away_team_form']
 
         # Мнения экспертов. Пока оценки скрыты, послематчевые мнения — только числом, чтобы не влиять
         # на голос; превью, написанные до матча, видны всем.
@@ -558,6 +549,16 @@ def _share_url(request, match) -> str:
     return url
 
 
+def team_forms(match) -> tuple:
+    """Форма команд (последние 5 сыгранных до матча) — для шапки на странице и в live-обновлении."""
+    from teams.services import get_team_form
+
+    def recent(team):
+        return (Match.objects.filter(Q(home_team=team) | Q(away_team=team), status='finished', start_time__lt=match.start_time)
+                .select_related('home_team', 'away_team').order_by('-start_time')[:5])
+    return get_team_form(match.home_team, recent(match.home_team)), get_team_form(match.away_team, recent(match.away_team))
+
+
 def match_action_context(request, match):
     """CTA-флаги матча (голосование/оценка/пульс)."""
     voting_open = match.voting_open_until > timezone.now() and match.status == 'finished'
@@ -572,7 +573,10 @@ def match_action_context(request, match):
             user_has_pulse_reactions = EventReaction.objects.filter(
                 user=request.user, match_event__match=match
             ).exists()
+    home_form, away_form = team_forms(match)
     return {
+        'home_team_form': home_form,
+        'away_team_form': away_form,
         'voting_open': voting_open,
         'user_has_evaluated': user_has_evaluated,
         'user_has_pulse_reactions': user_has_pulse_reactions,

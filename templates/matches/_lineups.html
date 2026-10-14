@@ -1,6 +1,7 @@
 {% load position_extras %}
 {% comment %}
-Составы команд. До старта, пока составов нет, блок сам догружается в фоне (составы публикуют ~за час).
+Составы команд. До старта, пока составов нет, блок сам догружается в фоне (составы публикуют ~за час);
+во время матча обновляется, чтобы карточки и замены появлялись без перезагрузки.
 {% endcomment %}
 <div id="lineups-container"
      {% if not lineups and match.live_poll_seconds %}
@@ -14,6 +15,12 @@
      hx-trigger="dopx:wake"
      hx-swap="outerHTML"
      data-wake-at="{{ match.poll_wake_at|date:'c' }}"
+     {% elif lineups and match.status == 'live' %}
+     {# Во время матча — карточки и замены в составах без перезагрузки. #}
+     data-background-poll
+     hx-get="{% url 'matches:lineups' match.id %}"
+     hx-trigger="every {{ match.LIVE_POLL_SECONDS }}s, dopx:wake"
+     hx-swap="outerHTML"
      {% endif %}>
 {% if lineups %}
             <div class="md-side-card">
