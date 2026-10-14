@@ -70,9 +70,15 @@
         });
     }
 
+    // Лёгкий отклик на смену деления (Android; на iPhone вибрация из браузера недоступна).
+    const canBuzz = 'vibrate' in navigator && window.matchMedia('(pointer: coarse)').matches;
     document.addEventListener('input', function (e) {
         if (e.target && e.target.classList && e.target.classList.contains('wizard-slider')) {
             updateFill(e.target);
+            if (canBuzz && e.target.dataset.wzLast !== e.target.value) {
+                e.target.dataset.wzLast = e.target.value;
+                navigator.vibrate(6);
+            }
         }
     });
 

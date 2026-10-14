@@ -4,6 +4,12 @@
 {% load static %}
 {% load match_extras %}
 
+{# Режим фокуса: без шапки, подвала и плашек сайта — только шаги оценки. #}
+{% block body_class %} is-wizard{% endblock %}
+{% block site_nav %}{% endblock %}
+{% block page_notices %}{% endblock %}
+{% block site_footer %}{% endblock %}
+{% block extra_style %}@view-transition { navigation: auto; }{% endblock %}
 {% block content %}
 {# === ПРОГРЕСС === #}
 <div class="max-w-5xl mx-auto mb-5 px-3">
@@ -26,7 +32,7 @@
     {% csrf_token %}
 
     {# Счётчик выбранных #}
-    <div class="sticky top-16 z-30 mb-5 bg-base-100/95 backdrop-blur border border-base-300 rounded-2xl px-4 py-3 flex items-center justify-between shadow-sm">
+    <div class="wz-counter">
         <span class="text-sm font-bold flex items-center gap-2">
             <i class="ti ti-checklist text-primary"></i>
             Оценено: <span class="text-primary" id="counter-value">0</span>
@@ -39,7 +45,7 @@
     === ЛУЧШИЙ / ХУДШИЙ ИГРОК ===
     Быстрый режим: выбор двух игроков заполняет скрытые поля карточек пресетами.
     {% endcomment %}
-    <div class="card bg-base-100 border-2 border-primary/30 shadow-sm mb-5">
+    <div class="card wz-card mb-5">
         <div class="card-body p-4 sm:p-5">
             <h3 class="font-extrabold text-base sm:text-lg mb-3.5 flex items-center gap-2">
                 <i class="ti ti-arrows-diff text-primary"></i> Лучший и худший игрок матча
@@ -94,7 +100,7 @@
     </div>
 
     <details class="mb-2">
-        <summary class="cursor-pointer list-none text-sm font-bold text-info/80 mb-3 flex items-center gap-1.5">
+        <summary class="cursor-pointer list-none text-sm font-semibold text-primary mb-3 flex items-center gap-1.5">
             <i class="ti ti-chevron-right text-[13px] transition-transform"></i>
             Оценить весь состав
         </summary>

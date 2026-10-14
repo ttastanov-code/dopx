@@ -3,6 +3,8 @@
 {% load ui_extras %}
 {% load match_extras %}
 
+{# Плавный переход с последнего шага мастера. #}
+{% block extra_style %}@view-transition { navigation: auto; }{% endblock %}
 {% block content %}
 <div class="min-h-[70vh] flex items-center justify-center px-3">
     <div class="max-w-md w-full">
@@ -15,8 +17,12 @@
             {% if total_rated %}
             <p class="text-xs text-base-content/60">
                 {% with p=rated_counts.players t=rated_counts.teams c=rated_counts.coaches r=rated_counts.referee %}
+                {% if p or t or c or r %}
                 Ваш голос учтён в <span class="font-bold text-base-content/80">{{ total_rated }}</span> {{ total_rated|ru_plural:"оценке,оценках,оценках" }}:
                 {% if p %}{{ p }} {{ p|ru_plural:"игрок,игрока,игроков" }}{% endif %}{% if p and t %}, {% endif %}{% if t %}{{ t }} {{ t|ru_plural:"команда,команды,команд" }}{% endif %}{% if c %}{% if p or t %}, {% endif %}{{ c }} {{ c|ru_plural:"тренер,тренера,тренеров" }}{% endif %}{% if r %}{% if p or t or c %} и {% endif %}судья{% endif %}.
+                {% else %}
+                Ваш голос учтён в общей оценке матча.
+                {% endif %}
                 {% endwith %}
             </p>
             {% else %}

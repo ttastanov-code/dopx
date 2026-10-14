@@ -405,7 +405,7 @@
     </style>
 </head>
 <body
-    class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}{% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %} is-staff{% endif %}"
+    class="bg-base-100 text-base-content antialiased{% block body_class %}{% endblock %}{% if show_tabbar %} has-tabbar{% endif %}{% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %} is-staff{% endif %}"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
     data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
     data-live-version="{{ live_version }}"
@@ -418,7 +418,8 @@
 
     {% block body_content %}
     {# Navbar; в staff-дашборде — свой каркас с боковым меню. #}
-    {% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %}{% include 'dashboard/_shell.html' %}{% else %}{% include 'components/_navbar.html' %}{% endif %}
+    {# Шапка сайта; мастер оценки убирает её (режим фокуса). #}
+    {% block site_nav %}{% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %}{% include 'dashboard/_shell.html' %}{% else %}{% include 'components/_navbar.html' %}{% endif %}{% endblock %}
     {# Messages #}
     {% if messages %}
     {# left-4 + right-4 — ширина между краями, влезает на 375px. #}
@@ -442,13 +443,15 @@
     {% endif %}
     {# Main Content #}
     <main class="{% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %}dash-main{% else %}container mx-auto px-3 sm:px-4 py-4 sm:py-6 w-full{% endif %}">
+        {% block page_notices %}
         {% if not request.path|slice:':17' == '/staff/dashboard/' %}{% include 'components/_profile_nudge.html' %}{% endif %}
         {% if mourning %}{% include 'components/_mourning_banner.html' %}{% endif %}
+        {% endblock %}
         {% block content %}{% endblock %}
     </main>
     {# Footer #}
     {# В staff-дашборде футер публичного сайта не нужен. #}
-    {% if request.resolver_match.app_name != 'dashboard' %}{% include 'components/_footer.html' %}{% endif %}
+    {% block site_footer %}{% if request.resolver_match.app_name != 'dashboard' %}{% include 'components/_footer.html' %}{% endif %}{% endblock %}
     {% if show_tabbar %}{% include 'components/_mobile_tabbar.html' %}{% endif %}
     {# Плашка о cookie (sessionid + csrftoken) #}
     {% include 'components/_cookie_banner.html' %}

@@ -1,35 +1,38 @@
 {% load match_extras ui_extras %}
-{# Шапка мастера: отмена, матч, номер шага и полоса из шести сегментов. Стили — css/wizard.css (wz-head). #}
-<div id="progress-container" class="wz-head">
-    <div class="wz-head__top">
-        {% if match %}
-        {# Отмена: удаляет черновик оценки, чтобы он не висел незавершённым. #}
-        <form method="post" action="{% url 'evaluations:cancel' match.id %}"
-              onsubmit="return confirm('Отменить оценку? Заполненные шаги будут удалены.')">
-            {% csrf_token %}
-            <button type="submit" class="wz-head__close" title="Отменить оценку" aria-label="Отменить оценку"><i class="ti ti-x"></i></button>
-        </form>
-        <div class="wz-head__match">
-            <span class="wz-head__team">
-                {% if match.home_team.logo_display %}<img src="{{ match.home_team.logo_display }}" alt="" class="wz-head__logo">{% endif %}
-                <span>{{ match.home_team.name }}</span>
-            </span>
-            <b class="wz-head__score">{% render_score match.home_score match.away_score %}</b>
-            <span class="wz-head__team wz-head__team--away">
-                <span>{{ match.away_team.name }}</span>
-                {% if match.away_team.logo_display %}<img src="{{ match.away_team.logo_display }}" alt="" class="wz-head__logo">{% endif %}
-            </span>
-        </div>
+{# Верх мастера: назад · полоса шагов · закрыть; ниже — шаг и матч. Стили — css/wizard.css (wz-top). #}
+<div id="progress-container" class="wz-top">
+    <div class="wz-top__bar">
+        {% if step > 1 and match %}
+        <a class="wz-top__btn" aria-label="Назад" title="Назад"
+           href="{% if step == 2 %}{% url 'evaluations:context' match.id %}{% elif step == 3 %}{% url 'evaluations:teams' match.id %}{% elif step == 4 %}{% url 'evaluations:players' match.id %}{% elif step == 5 %}{% url 'evaluations:coaches' match.id %}{% else %}{% url 'evaluations:referee' match.id %}{% endif %}"><i class="ti ti-chevron-left"></i></a>
+        {% else %}
+        <span class="wz-top__btn wz-top__btn--ghost" aria-hidden="true"></span>
         {% endif %}
-        <span class="wz-head__count">{{ step }}<span>/{{ total_steps }}</span></span>
+
+        <ol class="wz-top__steps" aria-label="Шаг {{ step }} из {{ total_steps }}">
+            {% for label in "Контекст,Команды,Игроки,Тренеры,Судья,Итог"|split:"," %}
+            <li class="{% if forloop.counter < step %}is-done{% elif forloop.counter == step %}is-current{% endif %}" title="{{ label }}"{% if forloop.counter == step %} aria-current="step"{% endif %}></li>
+            {% endfor %}
+        </ol>
+
+        {% if match %}
+        {# Закрыть = отменить оценку: черновик удаляется, чтобы не висел незавершённым. #}
+        <form method="post" action="{% url 'evaluations:cancel' match.id %}"
+              onsubmit="return confirm('Выйти из оценки? Заполненные шаги будут удалены.')">
+            {% csrf_token %}
+            <button type="submit" class="wz-top__btn" aria-label="Выйти из оценки" title="Выйти из оценки"><i class="ti ti-x"></i></button>
+        </form>
+        {% endif %}
     </div>
 
-    <ol class="wz-head__bar" aria-label="Шаг {{ step }} из {{ total_steps }}">
-        {% for label in "Контекст,Команды,Игроки,Тренеры,Судья,Итог"|split:"," %}
-        <li class="wz-head__seg{% if forloop.counter < step %} is-done{% elif forloop.counter == step %} is-current{% endif %}"{% if forloop.counter == step %} aria-current="step"{% endif %}>
-            <span class="wz-head__seg-line"></span>
-            <span class="wz-head__seg-label">{{ label }}</span>
-        </li>
-        {% endfor %}
-    </ol>
+    <div class="wz-top__meta">
+        <span class="wz-top__step">Шаг {{ step }} из {{ total_steps }}</span>
+        {% if match %}
+        <span class="wz-top__match">
+            {% if match.home_team.logo_display %}<img src="{{ match.home_team.logo_display }}" alt="">{% endif %}
+            {{ match.home_team.name }} <b>{% render_score match.home_score match.away_score %}</b> {{ match.away_team.name }}
+            {% if match.away_team.logo_display %}<img src="{{ match.away_team.logo_display }}" alt="">{% endif %}
+        </span>
+        {% endif %}
+    </div>
 </div>
