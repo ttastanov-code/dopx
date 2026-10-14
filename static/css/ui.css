@@ -2681,16 +2681,13 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
 .stat { border-inline-end: 0; }
 
 /* Верхнее меню — стекло: прозрачный фон и размытие того, что под ним. */
-.dx-glass-nav { background: transparent; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: background-color .25s ease, border-color .25s ease; }
+/* Стекло — на подложке ::before, а не на самой шапке: так выпадающие меню внутри неё тоже размывают страницу. */
+.navbar.dx-glass-nav { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom-color: transparent; }
 .dx-glass-nav :is(a, button, summary, span, i) { transition: color .25s ease; }
 /* Над тёмным фоном — всё меню разом: затемнённое стекло и светлый текст (кнопки с заливкой и выпадающие панели не трогаем). */
-.dx-glass-nav.dx-nav--on-dark { background: rgba(12, 16, 28, .62); border-bottom-color: rgba(255, 255, 255, .12); }
+.dx-glass-nav.dx-nav--on-dark::before { background-color: rgba(12, 16, 28, .55); box-shadow: inset 0 -1px 0 rgb(255 255 255 / .16), 0 8px 26px -14px rgb(0 0 0 / .55); }
 .dx-glass-nav.dx-nav--on-dark :is(a, button, summary, span, i):not(.btn-primary, .btn-primary *, details ul *, .dropdown-content *, [class*="badge"], [class*="badge"] *, .avatar *, #notification-wrapper [x-show] *) { color: #fff; }
 .dx-glass-nav.dx-nav--on-dark .menu :is(a, summary).active { background: rgba(255, 255, 255, .16); }
-/* Телефон: то же стекло, но размытие сильнее и с лёгкой подложкой — то, что проезжает под шапкой, превращается в мягкую дымку, а не в мутные пятна. */
-@media (max-width: 1023px) {
-  .dx-glass-nav { background: color-mix(in oklab, var(--color-base-100) 58%, transparent); -webkit-backdrop-filter: saturate(180%) blur(26px); backdrop-filter: saturate(180%) blur(26px); }
-}
 }
 
 /* ---------- Уведомления: страница, строка, окно колокольчика ---------- */
@@ -2764,7 +2761,7 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   .nf-pop-from { opacity: 1; transform: translateY(100%); }
   .nf-pop-enter, .nf-pop-leave { transition: transform .36s cubic-bezier(.16, 1, .3, 1); }
   /* Шапка с колокольчиком поднимается над панелью вкладок, страница не прокручивается. */
-  html.nf-sheet-open .dx-glass-nav { z-index: 70; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  html.nf-sheet-open .dx-glass-nav { z-index: 70; }
   .nf-pop .nf-panel { display: flex; flex-direction: column; min-height: 0; max-height: 86vh; }
   .nf-pop .nf-panel__list { max-height: none; flex: 1; }
 }
@@ -2792,7 +2789,6 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-tabbar__avatar { display: inline-grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 999px; overflow: hidden; font-size: .7rem; font-weight: 800;
                      color: var(--color-primary-content); background: var(--color-primary); box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 3.5px currentColor; }
 .dx-tabbar__avatar img { width: 100%; height: 100%; object-fit: cover; }
-@media (min-width: 768px) { .dx-tabbar { padding-left: calc(50% - 18rem); padding-right: calc(50% - 18rem); } }
 /* Лист «Рейтинги»: плитки разделов 2 в ряд. */
 .dx-drawer__heading { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; }
 .dx-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
@@ -2827,3 +2823,84 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-tabbar__mark > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dx-tabbar__mark .dx-tabbar__arc { transform-origin: 50% 50%; will-change: transform; }
 .is-spinning .dx-tabbar__arc { animation: dx-arc-turn 1.1s infinite; }
+
+
+/* ============================================================
+   ЖИДКОЕ СТЕКЛО (в стиле iOS 26): размытие с повышенной насыщенностью, блестящая кромка по краю, мягкий блик.
+   Только для панелей, плавающих над страницей: шапка, нижняя панель, шторки, выпадающие меню, липкая кнопка.
+   ============================================================ */
+:root {
+  --lg-edge: rgb(255 255 255 / .8);
+  --lg-edge2: rgb(255 255 255 / .24);
+  --lg-sheen: rgb(255 255 255 / .42);
+  --lg-shadow: 0 16px 40px -14px rgb(30 34 80 / .30), 0 2px 8px -2px rgb(30 34 80 / .10);
+}
+:root[data-theme="dark"] {
+  --lg-edge: rgb(255 255 255 / .24);
+  --lg-edge2: rgb(255 255 255 / .07);
+  --lg-sheen: rgb(255 255 255 / .12);
+  --lg-shadow: 0 16px 44px -14px rgb(0 0 0 / .65), 0 2px 8px -2px rgb(0 0 0 / .3);
+}
+
+/* Шапка: тонкая стеклянная лента, блик сверху вниз, кромка снизу. */
+.dx-glass-nav::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-color: color-mix(in oklab, var(--color-base-100) 50%, transparent);
+  background-image: linear-gradient(to bottom, var(--lg-sheen), transparent 85%);
+  -webkit-backdrop-filter: blur(22px) saturate(185%); backdrop-filter: blur(22px) saturate(185%);
+  box-shadow: inset 0 -1px 0 var(--lg-edge2), 0 8px 26px -16px rgb(30 34 80 / .35);
+  transition: background-color .25s ease, box-shadow .25s ease;
+}
+@media (max-width: 1023px) {
+  .dx-glass-nav::before { background-color: color-mix(in oklab, var(--color-base-100) 58%, transparent); -webkit-backdrop-filter: blur(26px) saturate(185%); backdrop-filter: blur(26px) saturate(185%); }
+}
+
+/* Плавающие панели: общий материал. Подложка плотнее там, где много текста (шторки, меню). */
+:is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) {
+  --lg-tint: 62%;
+  isolation: isolate;
+  background: color-mix(in oklab, var(--color-base-100) var(--lg-tint), transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(190%); backdrop-filter: blur(26px) saturate(190%);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), var(--lg-shadow);
+}
+:is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul)::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(158deg, var(--lg-sheen) 0%, transparent 40%, transparent 68%, color-mix(in oklab, var(--lg-sheen) 55%, transparent) 100%);
+}
+:is(.dx-drawer__panel, .nf-pop, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 82%; }
+:root[data-theme="dark"] :is(.dx-drawer__panel, .nf-pop, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 74%; }
+:root[data-theme="dark"] :is(.dx-tabbar, .dx-sticky-cta) { --lg-tint: 52%; }
+/* Шторки снизу — тень вверх. */
+.dx-drawer__panel { box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), 0 -18px 50px -18px rgb(0 0 0 / .35); }
+@media (min-width: 640px) { .nf-pop { box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), var(--lg-shadow); } }
+@media (max-width: 639px) { .nf-pop { box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), 0 -18px 50px -18px rgb(0 0 0 / .35); } }
+
+/* Нижняя панель телефона — плавающая стеклянная капсула, активный раздел — мягкая «таблетка». */
+.dx-tabbar {
+  left: 0; right: 0; margin-inline: auto; max-width: 30rem;
+  width: calc(100% - 1.5rem);
+  bottom: calc(.55rem + env(safe-area-inset-bottom, 0px));
+  border-radius: 1.9rem; padding: .3rem .35rem;
+}
+.dx-tabbar__item { position: relative; isolation: isolate; }
+.dx-tabbar__item.is-active:not(.dx-tabbar__item--center)::before {
+  content: ""; position: absolute; inset: .05rem .1rem; z-index: -1; border-radius: 1.4rem; pointer-events: none;
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  box-shadow: inset 0 1px 0 var(--lg-edge2), inset 0 0 0 1px var(--lg-edge2);
+}
+.dx-sticky-cta { border-radius: 1.4rem; }
+
+/* Меню в шапке на ПК — стеклянные панели с кромкой. */
+.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul { border-radius: 1.1rem; }
+.dx-glass-nav .menu :is(a, summary):hover { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+
+/* Без стекла: если пользователь просит меньше прозрачности или браузер не умеет размытие — плотные панели. */
+@media (prefers-reduced-transparency: reduce) {
+  :is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 98%; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .dx-glass-nav::before { background-color: var(--color-base-100); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 96%; }
+  .dx-glass-nav::before { background-color: color-mix(in oklab, var(--color-base-100) 94%, transparent); }
+}
