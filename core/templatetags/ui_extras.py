@@ -58,3 +58,9 @@ def rarity_label(rarity: str) -> str:
     """{{ badge.rarity|rarity_label }} — «Золото», «Легендарное» вместо gold/legendary."""
     from users.badges import RARITY_LABELS
     return RARITY_LABELS.get(rarity, rarity)
+
+
+@register.filter
+def split(value, sep=","):
+    """Строка в список по разделителю: {% for x in "a,b"|split:"," %}."""
+    return str(value).split(sep)

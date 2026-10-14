@@ -10,12 +10,6 @@
     {% include 'evaluations/_evaluation_progress.html' with step=4 total_steps=6 progress=progress %}
 </div>
 
-<!-- === ШАПКА МАТЧА === -->
-<div class="max-w-3xl mx-auto mb-5 px-3">
-    <div class="wz-hero-card">
-        {% include 'evaluations/_wizard_match_header.html' with match=match %}
-    </div>
-</div>
 
 <div class="max-w-3xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените работу тренеров</h2>
@@ -25,23 +19,22 @@
 <!-- === FORM === -->
 <div class="max-w-3xl mx-auto px-3">
     <form method="post" data-wizard-draft action="{% url 'evaluations:coaches' match.id %}" class="space-y-5"
-          data-wz-untouched-hint="Потяните ползунок, иначе критерий не засчитается">
+          data-wz-untouched-hint="Засчитывается только то, что вы оценили кнопкой или ползунком.">
         {% csrf_token %}
 
         {% for coach in coaches %}
-        <div class="wz-card card bg-base-100 border border-accent/20 shadow-sm">
+        <div class="wz-card card bg-base-100 border">
             <div class="card-body p-4 sm:p-5">
                 <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
-                    <div class="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
-                        <i class="ti ti-clipboard-list text-accent text-lg"></i>
+                    <div class="w-10 h-10 rounded-xl bg-base-200 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-clipboard-list text-lg opacity-60"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <h3 class="font-extrabold text-base break-words">{{ coach.first_name }} {{ coach.last_name }}</h3>
-                        <p class="text-xs text-accent/70 font-semibold break-words">
+                        <p class="text-xs opacity-55 break-words">
                             {% if coach == match.home_coach %}{{ match.home_team.name }}{% else %}{{ match.away_team.name }}{% endif %}
                         </p>
                     </div>
-                    <div class="badge badge-accent badge-sm flex-shrink-0">Тренер</div>
                 </div>
                 {% if mode == 'quick' %}
                 <div data-wz-preset-scope>
@@ -69,10 +62,7 @@
             </div>
         </div>
         {% empty %}
-        <div class="alert alert-ghost rounded-xl">
-            <i class="ti ti-user-off flex-shrink-0"></i>
-            <span class="text-sm">Нет данных о тренерах</span>
-        </div>
+        <p class="wz-note">Тренеры этого матча пока не загружены, шаг можно пропустить.</p>
         {% endfor %}
 
         <!-- Navigation Buttons -->

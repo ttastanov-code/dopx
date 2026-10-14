@@ -6,18 +6,12 @@
 
 {% block content %}
 {# === ПРОГРЕСС === #}
-<div class="max-w-7xl mx-auto mb-5 px-3">
+<div class="max-w-5xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=3 total_steps=6 progress=progress %}
 </div>
 
-{# === ШАПКА МАТЧА === #}
-<div class="max-w-7xl mx-auto mb-5 px-3">
-    <div class="wz-hero-card">
-        {% include 'evaluations/_wizard_match_header.html' with match=match %}
-    </div>
-</div>
 
-<div class="max-w-7xl mx-auto px-3 text-center mb-5">
+<div class="max-w-5xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игроков</h2>
     {% if mode == 'quick' %}
     <p class="text-sm text-base-content/60">Хватит выбрать лучшего и худшего. Если хотите подробнее, откройте весь состав ниже</p>
@@ -27,8 +21,8 @@
 </div>
 
 {# === ФОРМА === #}
-<form method="post" data-wizard-draft action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form"
-      data-wz-untouched-hint="Потяните хотя бы один ползунок, иначе критерий не засчитается">
+<form method="post" data-wizard-draft action="{% url 'evaluations:players' match.id %}" class="max-w-5xl mx-auto px-3" id="players-form"
+      data-wz-untouched-hint="Засчитываются только игроки, которых вы оценили.">
     {% csrf_token %}
 
     {# Счётчик выбранных #}

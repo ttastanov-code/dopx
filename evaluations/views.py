@@ -269,7 +269,6 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
             self.update_session(session, 'context')
             if is_new_step:
                 _award_step_xp(self.request, XP_CONTEXT_STEP, session)
-        messages.success(self.request, 'Контекст сохранён.')
         return redirect('evaluations:teams', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -319,10 +318,6 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
             self.update_session(session, 'teams')
             if is_new_step:
                 _award_step_xp(request, XP_TEAMS_STEP, session)
-        if rated_teams:
-            messages.success(request, f'Оценки команд сохранены: {rated_teams} из 2.')
-        else:
-            messages.info(request, 'Команды пропущены: вы не отметили ни одного критерия.')
         return redirect('evaluations:players', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -391,7 +386,6 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             if is_new_step and lineup_total:
                 # XP пропорционален доле оценённых игроков состава.
                 _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total), session)
-        messages.success(request, f'Оценено игроков: {count}.')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
     def _stats_notable_player_ids(self, player_stats_by_id: dict) -> set:
@@ -512,12 +506,6 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             self.update_session(session, 'coaches')
             if is_new_step:
                 _award_step_xp(request, XP_COACHES_STEP, session)
-        if total_coaches == 0:
-            messages.info(request, 'Тренеры этого матча пока не загружены в базу.')
-        elif rated_coaches:
-            messages.success(request, f'Оценки тренеров сохранены: {rated_coaches} из {total_coaches}.')
-        else:
-            messages.info(request, 'Тренеры пропущены: вы не отметили ни одного критерия.')
         return redirect('evaluations:referee', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -560,10 +548,6 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
             self.update_session(session, 'referee')
             if is_new_step:
                 _award_step_xp(self.request, XP_REFEREE_STEP, session)
-        if touched:
-            messages.success(self.request, 'Оценка судейства сохранена.')
-        else:
-            messages.info(self.request, 'Судейство пропущено: вы не отметили ни одного критерия.')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -704,8 +688,6 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             )
         except Exception as e:
             logger.error(f"Ошибка постановки задачи агрегатов: {e}")
-
-        messages.success(self.request, 'Оценка завершена. Спасибо за вклад.')
 
         # Сводка «во сколько оценок вы вошли» — считаем сразу по сохранённым строкам.
         rated_counts = {

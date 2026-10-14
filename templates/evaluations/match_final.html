@@ -6,25 +6,16 @@
 
 {% block content %}
 {# === ПРОГРЕСС === #}
-<div class="max-w-2xl mx-auto mb-5 px-3">
+<div class="max-w-3xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=6 total_steps=6 progress=progress %}
 </div>
 
-{# === ШАПКА МАТЧА === #}
-<div class="max-w-2xl mx-auto mb-5 px-3">
-    <div class="wz-hero-card">
-        {% include 'evaluations/_wizard_match_header.html' with match=match %}
-    </div>
-</div>
 
 {# === ФОРМА === #}
-<div class="max-w-2xl mx-auto px-3">
+<div class="max-w-3xl mx-auto px-3">
     <div class="wz-shell card bg-base-100 border border-base-200 shadow-sm">
         <div class="card-body p-4 sm:p-6">
             <div class="text-center mb-5 sm:mb-6">
-                <div class="w-14 h-14 rounded-2xl bg-warning/10 flex items-center justify-center mx-auto mb-3">
-                    <i class="ti ti-dopx-rate text-2xl text-warning"></i>
-                </div>
                 <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Общая оценка матча</h2>
                 <p class="text-sm text-base-content/60">Последний шаг. Как вам матч в целом?</p>
             </div>
@@ -97,12 +88,6 @@
                     </div>
                 </div>
 
-                {# Инфо #}
-                {# Этот шаг даёт +1 XP (всего за вайзард до 10). #}
-                <div class="alert alert-success rounded-xl">
-                    <i class="ti ti-confetti flex-shrink-0"></i>
-                    <span class="text-xs">Последний шаг. Дальше оценка уйдёт в рейтинг матча</span>
-                </div>
 
                 {# Навигация #}
                 <div class="wz-sticky-nav flex gap-2">

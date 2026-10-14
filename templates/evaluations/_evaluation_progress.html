@@ -1,60 +1,35 @@
-{# Прогресс-бар вайзарда: подпись шага + линия с иконками шагов. #}
-<div id="progress-container" class="px-1 sm:px-0">
-    <div class="flex items-center justify-between mb-3 sm:mb-4">
-        <div class="flex items-baseline gap-2 min-w-0">
-            <span class="text-base sm:text-lg font-extrabold break-words">
-                {% if step == 1 %}Контекст просмотра
-                {% elif step == 2 %}Оценка команд
-                {% elif step == 3 %}Оценка игроков
-                {% elif step == 4 %}Оценка тренеров
-                {% elif step == 5 %}Оценка судейства
-                {% else %}Итоговая оценка{% endif %}
+{% load match_extras ui_extras %}
+{# Шапка мастера: отмена, матч, номер шага и полоса из шести сегментов. Стили — css/wizard.css (wz-head). #}
+<div id="progress-container" class="wz-head">
+    <div class="wz-head__top">
+        {% if match %}
+        {# Отмена: удаляет черновик оценки, чтобы он не висел незавершённым. #}
+        <form method="post" action="{% url 'evaluations:cancel' match.id %}"
+              onsubmit="return confirm('Отменить оценку? Заполненные шаги будут удалены.')">
+            {% csrf_token %}
+            <button type="submit" class="wz-head__close" title="Отменить оценку" aria-label="Отменить оценку"><i class="ti ti-x"></i></button>
+        </form>
+        <div class="wz-head__match">
+            <span class="wz-head__team">
+                {% if match.home_team.logo_display %}<img src="{{ match.home_team.logo_display }}" alt="" class="wz-head__logo">{% endif %}
+                <span>{{ match.home_team.name }}</span>
             </span>
-            <span class="text-xs sm:text-sm opacity-40 flex-shrink-0">шаг {{ step }} из {{ total_steps }}</span>
+            <b class="wz-head__score">{% render_score match.home_score match.away_score %}</b>
+            <span class="wz-head__team wz-head__team--away">
+                <span>{{ match.away_team.name }}</span>
+                {% if match.away_team.logo_display %}<img src="{{ match.away_team.logo_display }}" alt="" class="wz-head__logo">{% endif %}
+            </span>
         </div>
-        <span class="text-xs sm:text-sm font-bold text-primary flex-shrink-0">{{ progress }}%</span>
+        {% endif %}
+        <span class="wz-head__count">{{ step }}<span>/{{ total_steps }}</span></span>
     </div>
 
-    <div class="wz-rail">
-        <div class="wz-rail__track">
-            <div class="wz-rail__fill" style="width: {{ progress }}%"></div>
-        </div>
-        <div class="wz-rail__stations">
-            {% for i in "123456"|make_list %}
-            <div class="wz-rail__station-wrap">
-                <div class="wz-rail__station
-                    {% if i|stringformat:"s" == step|stringformat:"s" %}
-                    wz-rail__station--current
-                    {% elif i|stringformat:"s" < step|stringformat:"s" %}
-                    wz-rail__station--done
-                    {% endif %}">
-                    {% if i|stringformat:"s" < step|stringformat:"s" %}
-                    <i class="ti ti-check"></i>
-                    {% elif forloop.counter == 1 %}<i class="ti ti-eye"></i>
-                    {% elif forloop.counter == 2 %}<i class="ti ti-shield"></i>
-                    {% elif forloop.counter == 3 %}<i class="ti ti-users"></i>
-                    {% elif forloop.counter == 4 %}<i class="ti ti-clipboard-list"></i>
-                    {% elif forloop.counter == 5 %}<i class="ti ti-gavel"></i>
-                    {% else %}<i class="ti ti-dopx-rate"></i>{% endif %}
-                </div>
-                <span class="wz-rail__label {% if i|stringformat:"s" == step|stringformat:"s" %}wz-rail__label--current{% endif %}">
-                    {% if forloop.counter == 1 %}Контекст
-                    {% elif forloop.counter == 2 %}Команды
-                    {% elif forloop.counter == 3 %}Игроки
-                    {% elif forloop.counter == 4 %}Тренеры
-                    {% elif forloop.counter == 5 %}Судья
-                    {% else %}Итог{% endif %}
-                </span>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% if match %}
-    {# Отмена: удаляет черновик оценки, чтобы он не висел незавершённым. #}
-    <form method="post" action="{% url 'evaluations:cancel' match.id %}" class="dx-wz-cancel"
-          onsubmit="return confirm('Отменить оценку? Заполненные шаги будут удалены.')">
-        {% csrf_token %}
-        <button type="submit"><i class="ti ti-x"></i> Отменить оценку</button>
-    </form>
-    {% endif %}
+    <ol class="wz-head__bar" aria-label="Шаг {{ step }} из {{ total_steps }}">
+        {% for label in "Контекст,Команды,Игроки,Тренеры,Судья,Итог"|split:"," %}
+        <li class="wz-head__seg{% if forloop.counter < step %} is-done{% elif forloop.counter == step %} is-current{% endif %}"{% if forloop.counter == step %} aria-current="step"{% endif %}>
+            <span class="wz-head__seg-line"></span>
+            <span class="wz-head__seg-label">{{ label }}</span>
+        </li>
+        {% endfor %}
+    </ol>
 </div>

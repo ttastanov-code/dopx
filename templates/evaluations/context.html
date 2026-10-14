@@ -6,25 +6,16 @@
 
 {% block content %}
 {# === ПРОГРЕСС === #}
-<div class="max-w-2xl mx-auto mb-5 px-3">
+<div class="max-w-3xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=1 total_steps=6 progress=progress %}
 </div>
 
-{# === ШАПКА МАТЧА === #}
-<div class="max-w-2xl mx-auto mb-5 px-3">
-    <div class="wz-hero-card">
-        {% include 'evaluations/_wizard_match_header.html' with match=match %}
-    </div>
-</div>
 
 {# === ФОРМА === #}
-<div class="max-w-2xl mx-auto px-3">
+<div class="max-w-3xl mx-auto px-3">
     <div class="wz-shell card bg-base-100 border border-base-200 shadow-sm">
         <div class="card-body p-4 sm:p-6">
             <div class="text-center mb-5 sm:mb-6">
-                <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <i class="ti ti-eye text-2xl text-primary"></i>
-                </div>
                 <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Как вы смотрели матч?</h2>
                 <p class="text-sm text-base-content/60">Пара вопросов о контексте вашего просмотра</p>
             </div>
@@ -190,10 +181,7 @@
                 </div>
 
                 {# Инфо #}
-                <div class="alert alert-info rounded-xl">
-                    <i class="ti ti-info-circle flex-shrink-0"></i>
-                    <span class="text-xs">Эти ответы влияют на вес вашей оценки в общем рейтинге</span>
-                </div>
+                <p class="wz-note">Ответы влияют на вес вашей оценки в общем рейтинге.</p>
 
                 {# Навигация #}
                 <div class="wz-sticky-nav">

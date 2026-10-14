@@ -7,31 +7,25 @@
 
 {% block content %}
 <!-- === PROGRESS === -->
-<div class="max-w-4xl mx-auto mb-5 px-3">
+<div class="max-w-3xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=2 total_steps=6 progress=progress %}
 </div>
 
-<!-- === ШАПКА МАТЧА === -->
-<div class="max-w-4xl mx-auto mb-5 px-3">
-    <div class="wz-hero-card">
-        {% include 'evaluations/_wizard_match_header.html' with match=match %}
-    </div>
-</div>
 
-<div class="max-w-4xl mx-auto px-3 text-center mb-5">
+<div class="max-w-3xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игру команд</h2>
     <p class="text-sm text-base-content/60">Каждый пункт от 1 до 10</p>
 </div>
 
 <!-- === FORM === -->
-<div class="max-w-4xl mx-auto px-3">
+<div class="max-w-3xl mx-auto px-3">
     <form method="post" data-wizard-draft action="{% url 'evaluations:teams' match.id %}" class="space-y-5"
-          data-wz-untouched-hint="Потяните ползунок, иначе критерий не засчитается">
+          data-wz-untouched-hint="Засчитывается только то, что вы оценили кнопкой или ползунком.">
         {% csrf_token %}
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <!-- Домашняя команда -->
-            <div class="wz-card card bg-base-100 border border-primary/20 shadow-sm">
+            <div class="wz-card card bg-base-100 border">
                 <div class="card-body p-4 sm:p-5">
                     <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
                         {% if match.home_team.logo_display %}
@@ -44,7 +38,7 @@
                         {% endif %}
                         <div class="flex-1 min-w-0">
                             <h3 class="font-extrabold text-base break-words">{{ match.home_team.name }}</h3>
-                            <p class="text-xs text-primary/70 font-semibold">Домашняя команда</p>
+                            <p class="text-xs opacity-55">Дома</p>
                         </div>
                     </div>
                     <div class="space-y-3.5">
@@ -64,9 +58,6 @@
                                    class="wizard-slider"
                                    step="1"
                                    oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
-                            <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
-                                <span>1</span><span>5</span><span>10</span>
-                            </div>
                         </div>
                         {% endfor %}
                     </div>
@@ -74,7 +65,7 @@
             </div>
 
             <!-- Гостевая команда -->
-            <div class="wz-card card bg-base-100 border border-secondary/20 shadow-sm">
+            <div class="wz-card card bg-base-100 border">
                 <div class="card-body p-4 sm:p-5">
                     <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
                         {% if match.away_team.logo_display %}
@@ -87,7 +78,7 @@
                         {% endif %}
                         <div class="flex-1 min-w-0">
                             <h3 class="font-extrabold text-base break-words">{{ match.away_team.name }}</h3>
-                            <p class="text-xs text-secondary/70 font-semibold">Гостевая команда</p>
+                            <p class="text-xs opacity-55">В гостях</p>
                         </div>
                     </div>
                     <div class="space-y-3.5">
@@ -107,9 +98,6 @@
                                    class="wizard-slider"
                                    step="1"
                                    oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
-                            <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
-                                <span>1</span><span>5</span><span>10</span>
-                            </div>
                         </div>
                         {% endfor %}
                     </div>

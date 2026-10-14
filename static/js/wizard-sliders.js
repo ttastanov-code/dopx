@@ -2,8 +2,8 @@
 //
 // Для всех .wizard-slider:
 // - выставляет --wz-fill (заливка трека в wizard.css);
-// - создаёт скрытое поле <name>__touched (0/1) и подсказку, пока ползунок не тронут —
-//   сервер не засчитывает нетронутые критерии.
+// - создаёт скрытое поле <name>__touched (0/1): сервер не засчитывает нетронутые критерии;
+// - у нетронутого критерия вместо числа прочерк, на шаг — одна заметка.
 (function () {
     function updateFill(el) {
         const min = parseFloat(el.min || '0');
@@ -13,8 +13,8 @@
         el.style.setProperty('--wz-fill', pct + '%');
     }
 
-    // Нейтральная подсказка; шаблоны переопределяют её через data-wz-untouched-hint.
-    const DEFAULT_HINT = 'Потяните, чтобы указать своё мнение';
+    // Заметка шага по умолчанию; шаблоны переопределяют её через data-wz-untouched-hint.
+    const DEFAULT_HINT = 'Засчитывается только то, что вы оценили кнопкой или ползунком.'
 
     function ensureTouchedTracking(el) {
         if (el.dataset.wzTouchedInit || !el.name) {
@@ -32,20 +32,35 @@
         if (!card) {
             return;
         }
+        // Нетронутый критерий: прочерк вместо «5», значение появится при первом движении.
         card.classList.add('wz-slider-card--untouched');
-
-        const hintSource = el.closest('[data-wz-untouched-hint]');
-        const hint = document.createElement('div');
-        hint.className = 'wz-slider-card__untouched-hint';
-        hint.textContent = hintSource ? hintSource.dataset.wzUntouchedHint : DEFAULT_HINT;
-        card.appendChild(hint);
+        const value = card.querySelector('.wz-slider-card__value');
+        if (value) {
+            value.textContent = '—';
+        }
+        addFormNote(el);
 
         el.addEventListener('input', function markTouched() {
             hidden.value = '1';
             card.classList.remove('wz-slider-card--untouched');
-            hint.remove();
+            if (value) {
+                value.textContent = el.value;
+            }
             el.removeEventListener('input', markTouched);
         });
+    }
+
+    // Одна заметка на шаг вместо подсказки под каждым ползунком.
+    function addFormNote(el) {
+        const scope = el.closest('[data-wz-untouched-hint]');
+        if (!scope || scope.dataset.wzNoteAdded) {
+            return;
+        }
+        scope.dataset.wzNoteAdded = '1';
+        const note = document.createElement('p');
+        note.className = 'wz-note';
+        note.textContent = scope.dataset.wzUntouchedHint || DEFAULT_HINT;
+        scope.insertAdjacentElement('afterbegin', note);
     }
 
     function initAll(root) {

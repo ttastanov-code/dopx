@@ -6,25 +6,16 @@
 
 {% block content %}
 <!-- === PROGRESS === -->
-<div class="max-w-2xl mx-auto mb-5 px-3">
+<div class="max-w-3xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=5 total_steps=6 progress=progress %}
 </div>
 
-<!-- === ШАПКА МАТЧА === -->
-<div class="max-w-2xl mx-auto mb-5 px-3">
-    <div class="wz-hero-card">
-        {% include 'evaluations/_wizard_match_header.html' with match=match %}
-    </div>
-</div>
 
 <!-- === FORM CARD === -->
-<div class="max-w-2xl mx-auto px-3">
+<div class="max-w-3xl mx-auto px-3">
     <div class="wz-shell card bg-base-100 border border-base-200 shadow-sm">
         <div class="card-body p-4 sm:p-6">
             <div class="text-center mb-5 sm:mb-6">
-                <div class="w-14 h-14 rounded-2xl bg-neutral/10 flex items-center justify-center mx-auto mb-3">
-                    <i class="ti ti-gavel text-2xl text-neutral"></i>
-                </div>
                 <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оценка судейства</h2>
                 {# Судья показан явно. #}
                 {% if match.referee %}
@@ -36,7 +27,7 @@
             </div>
 
             <form method="post" data-wizard-draft class="space-y-5"
-                  data-wz-untouched-hint="Потяните ползунок, иначе судейство не засчитается">
+                  data-wz-untouched-hint="Судейство засчитается, если оценить его кнопкой или ползунком.">
                 {% csrf_token %}
 
                 {% if mode == 'quick' %}
@@ -61,11 +52,7 @@
                 {% include 'evaluations/_referee_criteria.html' %}
                 {% endif %}
 
-                <!-- Info Alert -->
-                <div class="alert alert-info rounded-xl">
-                    <i class="ti ti-info-circle flex-shrink-0"></i>
-                    <span class="text-xs">0–30: почти не влиял · 31–70: обычное влияние · 71–100: существенно повлиял на игру</span>
-                </div>
+                <p class="wz-note">Влияние судьи на игру: 0–30 почти не влиял, 31–70 обычное, 71–100 существенно повлиял.</p>
 
                 <!-- Navigation Buttons -->
                 <div class="wz-sticky-nav flex gap-2">
