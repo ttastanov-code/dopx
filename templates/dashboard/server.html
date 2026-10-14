@@ -36,7 +36,7 @@
         </div>
         <form method="post" action="{% url 'dashboard:server_action' %}" onsubmit="return confirm('{% if maintenance %}Открыть сайт для всех?{% else %}Закрыть сайт для посетителей?{% endif %}');">{% csrf_token %}
             <input type="hidden" name="action" value="maintenance"><input type="hidden" name="on" value="{% if maintenance %}0{% else %}1{% endif %}">
-            <button class="btn btn-sm {% if maintenance %}btn-success{% else %}btn-warning{% endif %}"><i class="ti {% if maintenance %}ti-lock-open{% else %}ti-lock{% endif %}"></i> {% if maintenance %}Открыть сайт{% else %}Включить режим обслуживания{% endif %}</button>
+            <button class="btn btn-sm {% if maintenance %}btn-primary{% else %}btn-outline{% endif %}"><i class="ti {% if maintenance %}ti-lock-open{% else %}ti-lock{% endif %}"></i> {% if maintenance %}Открыть сайт{% else %}Включить режим обслуживания{% endif %}</button>
         </form>
     </div></div>
 </div>
