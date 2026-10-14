@@ -2683,10 +2683,16 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
 /* Верхнее меню — стекло: прозрачный фон и размытие того, что под ним. */
 .dx-glass-nav { background: transparent; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: background-color .25s ease, border-color .25s ease; }
 .dx-glass-nav :is(a, button, summary, span, i) { transition: color .25s ease; }
+/* Стекло и тёмный режим над тёмным фоном — только на ПК; на телефоне шапка почти непрозрачная (без мутных пятен от того, что под ней). */
+@media (min-width: 1024px) {
 /* Над тёмным фоном — всё меню разом: затемнённое стекло и светлый текст (кнопки с заливкой и выпадающие панели не трогаем). */
 .dx-glass-nav.dx-nav--on-dark { background: rgba(12, 16, 28, .62); border-bottom-color: rgba(255, 255, 255, .12); }
 .dx-glass-nav.dx-nav--on-dark :is(a, button, summary, span, i):not(.btn-primary, .btn-primary *, details ul *, .dropdown-content *, [class*="badge"], [class*="badge"] *, .avatar *, #notification-wrapper [x-show] *) { color: #fff; }
 .dx-glass-nav.dx-nav--on-dark .menu :is(a, summary).active { background: rgba(255, 255, 255, .16); }
+}
+@media (max-width: 1023px) {
+  .dx-glass-nav { background: color-mix(in oklab, var(--color-base-100) 96%, transparent); -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px); }
+}
 
 /* ---------- Уведомления: страница, строка, окно колокольчика ---------- */
 .nf-page { max-width: 44rem; margin: 0 auto; padding: 0 .25rem; }
