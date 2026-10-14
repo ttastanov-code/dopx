@@ -322,7 +322,17 @@ class PlayerDetailView(DetailView):
                 .values('match__season_id')
                 .annotate(total=Count('id'), with_assist=Count('id', filter=Q(assist_player__isnull=False)))
             }
+            from matches.models import MatchPlayerStatistics
+            from matches.stat_ratings import _to_rating
+
+            stat_rating_by_match = {
+                mid: _to_rating(raw)
+                for mid, raw in MatchPlayerStatistics.objects.filter(player=player, match_id__in=all_ids).values_list('match_id', 'raw')
+            }
             for key, match_ids in match_ids_by_stint.items():
+                # Средняя оценка по статистике за сезон в клубе.
+                ratings = [stat_rating_by_match[mid] for mid in match_ids if stat_rating_by_match.get(mid)]
+                stints[key]['stat_rating'] = round(sum(ratings) / len(ratings), 1) if ratings else None
                 total, with_assist = coverage.get(key[0], (0, 0))
                 stints[key]['assists_known'] = bool(total) and with_assist / total >= ASSIST_COVERAGE_MIN
                 for field in ('goals', 'assists', 'yellow', 'red'):

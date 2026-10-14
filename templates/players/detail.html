@@ -251,14 +251,14 @@
                             <div class="pl-season__cell"><b>{{ stint.minutes }}</b><span>{{ stint.minutes|ru_plural:"минута,минуты,минут" }}</span></div>
                             <div class="pl-season__cell">
                                 <b class="{% if stint.rating >= 7 %}text-success{% elif stint.rating >= 5 %}text-warning{% elif stint.rating %}text-error{% endif %}">{% if stint.rating %}{{ stint.rating|floatformat:1 }}{% else %}—{% endif %}</b>
-                                <span>рейтинг</span>
+                                <span>оценка болельщиков</span>
                             </div>
                             <div class="pl-season__cell"><b>{{ stint.goals }}</b><span>{{ stint.goals|ru_plural:"гол,гола,голов" }}</span></div>
                             {# Передачи — только если поставщик указывал ассистентов в этом сезоне. #}
-                            <div class="pl-season__cell">{% if stint.assists_known %}<b>{{ stint.assists }}</b><span>{{ stint.assists|ru_plural:"передача,передачи,передач" }}</span>{% else %}<b>—</b><span>передачи не учитывались</span>{% endif %}</div>
+                            <div class="pl-season__cell">{% if stint.assists_known %}<b>{{ stint.assists }}</b><span>{{ stint.assists|ru_plural:"голевая передача,голевые передачи,голевых передач" }}</span>{% else %}<b>—</b><span>голевые передачи не учитывались</span>{% endif %}</div>
                             <div class="pl-season__cell">
-                                <b><span class="pl-card pl-card--y"></span>{{ stint.yellow }}{% if stint.red %} <span class="pl-card pl-card--r"></span>{{ stint.red }}{% endif %}</b>
-                                <span>{% if stint.red %}карточки{% else %}{{ stint.yellow|ru_plural:"жёлтая,жёлтые,жёлтых" }}{% endif %}</span>
+                                <b>{% if stint.stat_rating %}{{ stint.stat_rating|floatformat:1 }}{% else %}—{% endif %}</b>
+                                <span class="inline-flex items-center gap-1">по статистике{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.stat_rating %}</span>
                             </div>
                         </div>
                         <p class="pl-season__meta">
