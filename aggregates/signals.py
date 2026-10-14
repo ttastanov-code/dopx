@@ -1,6 +1,6 @@
 # aggregates/signals.py
 from django.core.cache import cache
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 from matches.models import Match
@@ -108,6 +108,26 @@ def on_match_voting_deadline_changed(sender, instance, created=False, update_fie
             trigger_aggregate_recalculation.delay(match_id)
         else:
             _schedule_recalculation(match_id, countdown=60)
+
+
+@receiver(pre_save, sender=Match)
+def remember_match_referee(sender, instance, update_fields=None, **kwargs):
+    """Запомнить судью до сохранения — чтобы заметить, что его поменяли или добавили."""
+    if update_fields is not None and "referee" not in update_fields:
+        instance._referee_before = instance.referee_id
+        return
+    instance._referee_before = (
+        Match.objects.filter(pk=instance.pk).values_list("referee_id", flat=True).first() if instance.pk else None
+    )
+
+
+@receiver(post_save, sender=Match)
+def on_match_referee_changed(sender, instance, created=False, **kwargs):
+    """Судью добавили или поменяли (поставщик или ручная правка) — оценки судейства переходят к нему."""
+    if created or getattr(instance, "_referee_before", None) == instance.referee_id:
+        return
+    if RefereeEvaluation.objects.filter(match_id=instance.pk).exists():
+        _schedule_recalculation(str(instance.pk), countdown=30)
 
 
 @receiver(post_delete, sender=PlayerEvaluation)

@@ -438,3 +438,28 @@ class UntouchedCriteriaTests(_Base):
         PlayerMatchAggregate.objects.create(player=self.player, match=m2, performance_score=6, avg_risk=None, total_votes=30)
         row = PlayerMatchAggregate.objects.filter(player=self.player).aggregate(r=vote_weighted_avg("avg_risk"))
         self.assertAlmostEqual(row["r"], 4.0)
+
+
+class RefereeAddedLaterTests(TestCase):
+    """Судью добавили после оценок — пересчёт ставится в очередь."""
+
+    def test_referee_change_schedules_recalculation(self):
+        from unittest.mock import patch
+
+        from evaluations.models import RefereeEvaluation
+        from referees.models import Referee
+
+        league = League.objects.create(name="L", country="KZ")
+        season = Season.objects.create(league=league, year="2026")
+        home, away = Team.objects.create(name="H"), Team.objects.create(name="A")
+        match = Match.objects.create(league=league, season=season, home_team=home, away_team=away,
+                                     start_time=timezone.now(), status="finished",
+                                     voting_open_until=timezone.now() - timedelta(days=5))
+        user = User.objects.create_user(username="rv", email="rv@example.com", password="x")
+        RefereeEvaluation.objects.create(user=user, match=match, decision_quality=7, influence_score=40)
+        with patch("aggregates.signals._schedule_recalculation") as scheduled:
+            match.referee = Referee.objects.create(first_name="Иван", last_name="Судьин")
+            match.save()
+            scheduled.assert_called_once()
+            match.save(update_fields=["status"])
+            scheduled.assert_called_once()
