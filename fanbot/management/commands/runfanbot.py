@@ -5,6 +5,7 @@
 import logging
 import time
 
+import redis
 import requests
 from django.conf import settings
 from django.core.cache import cache
@@ -35,7 +36,13 @@ class Command(BaseCommand):
         self.stdout.write("Бот болельщиков запущен.")
         try:
             while True:
-                self.poll_once()
+                try:
+                    self.poll_once()
+                except redis.exceptions.ConnectionError:
+                    # Redis ещё не поднялся — ждём, а не падаем.
+                    logger.warning("fanbot: Redis недоступен (127.0.0.1:6379), жду")
+                    time.sleep(5)
+                    continue
                 heartbeat.beat("fan_bot", updates=self.stats["updates"], errors=self.stats["errors"],
                                last_error=self.stats["last_error"])
                 if heartbeat.restart_requested("fan_bot"):

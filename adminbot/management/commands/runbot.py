@@ -10,6 +10,7 @@
 import logging
 import time
 
+import redis
 import requests
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
@@ -69,6 +70,10 @@ class Command(BaseCommand):
                     time.sleep(3)
             except requests.RequestException as e:
                 logger.warning("adminbot: сеть: %s", tg.redact(e))
+                time.sleep(5)
+            except redis.exceptions.ConnectionError:
+                # Redis ещё не поднялся (например, сразу после включения ноутбука) — ждём без трассировки.
+                logger.warning("adminbot: Redis недоступен (127.0.0.1:6379), жду")
                 time.sleep(5)
             except Exception:
                 logger.exception("adminbot: сбой цикла")
