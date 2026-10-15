@@ -477,8 +477,6 @@
     {# Индикатор загрузки: тонкая полоса сверху, только если запрос дольше LOADER_DELAY_MS. #}
     <div id="global-loader" aria-hidden="true"></div>
     {# Долгая загрузка (дольше SLOW_LOADER_MS): фон слегка размывается, знак DOPX крутится по центру экрана. #}
-    {# Safari (iOS 26) красит строку статуса по однотонному фиксированному слою у верхнего края; без него — серая дымка над шапкой. #}
-    <div class="dx-safari-top" aria-hidden="true"></div>
     <div id="global-loader-logo" aria-hidden="true">{% include 'components/_brand_loader.html' with size=64 uid='global' %}</div>
     {% endblock %}
     {# tooltipTrigger — в alpine-components.js. #}

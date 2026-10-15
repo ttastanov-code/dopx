@@ -3023,10 +3023,19 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   .dx-tabbar { visibility: visible; }
   .dx-tabbar-min .dx-tabbar { visibility: hidden; transition: width .42s cubic-bezier(.32, .72, 0, 1), right .42s cubic-bezier(.32, .72, 0, 1), opacity .16s ease .28s, visibility 0s linear .45s; }
 }
-.dx-safari-top { display: none; }
 @media (max-width: 1023px) {
-  .dx-safari-top { display: block; position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 41; pointer-events: none; background: var(--color-base-100); }
   /* Нижнее меню и кнопка: короткая плотная тень вместо широкой дымки до края экрана. */
   .dx-tabbar, .dx-tabbar-toggle { --lg-drop: 0 4px 14px -6px rgb(20 30 80 / .22); }
   :root[data-theme="dark"] :is(.dx-tabbar, .dx-tabbar-toggle) { --lg-drop: 0 4px 14px -6px rgb(0 0 0 / .6); }
+  /* Телефон: стекло на самой шапке — Safari (iOS 26) продолжает его под строку статуса, без отдельной полосы сверху.
+     Слой ::before оставляет только блик и кромку. */
+  .navbar.dx-glass-nav {
+    background-color: color-mix(in oklab, var(--color-base-100) 30%, transparent);
+    -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+  }
+  .dx-glass-nav::before { background-color: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .navbar.dx-glass-nav.dx-nav--on-dark { background-color: rgba(12, 16, 28, .34); }
+  .dx-glass-nav.dx-nav--on-dark::before { background-color: transparent; }
+  /* Окно уведомлений внутри шапки — шторка снизу; размытие у родителя сдвинуло бы её, на время открытия снимаем. */
+  html.nf-sheet-open .navbar.dx-glass-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
