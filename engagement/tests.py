@@ -316,7 +316,10 @@ class PagesTests(EngagementTestCase):
             self.assertEqual(response.status_code, 302, kind)
         path = response.url.split(settings.MEDIA_URL, 1)[1]
         with default_storage.open(path) as fh:
-            self.assertEqual(Image.open(fh).size, (1080, 1920))
+            # Формат сторис 9:16, не меньше 1080 по ширине (карточки рисуются в двойном разрешении).
+            w, h = Image.open(fh).size
+            self.assertEqual(w * 16, h * 9)
+            self.assertGreaterEqual(w, 1080)
         # Закрытый профиль — карточек нет.
         user.is_profile_public = False
         user.save(update_fields=['is_profile_public'])
