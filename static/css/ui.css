@@ -3122,3 +3122,13 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-ach__actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
 .dx-ach__actions .btn { gap: .3rem; }
 .dx-title-icon.dx-medal--xs { --s: 1.15rem; }
+
+/* Активный раздел нижнего меню: мягкая подложка в цвет акцента с ровными отступами, без обводок и теней. */
+.dx-tabbar__item.is-active:not(.dx-tabbar__item--center)::before {
+  inset: .3rem .2rem; border-radius: 1.15rem;
+  background: color-mix(in oklab, var(--color-primary) 11%, transparent);
+  box-shadow: none;
+}
+:root[data-theme="dark"] .dx-tabbar__item.is-active:not(.dx-tabbar__item--center)::before { background: color-mix(in oklab, var(--color-primary) 24%, transparent); }
+/* Аватар профиля: без кольца; выделение раздела делает подложка. */
+.dx-tabbar__avatar { box-shadow: none; }
