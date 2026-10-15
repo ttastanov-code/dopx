@@ -540,7 +540,7 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-# https за прокси (nginx на проде, ngrok на ноутбуке) — иначе ссылки строятся как http://.
+# https за прокси (nginx на проде, туннель на ноутбуке) — иначе ссылки строятся как http://.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # IP клиента берётся с конца X-Forwarded-For. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
@@ -1032,7 +1032,7 @@ if DEBUG:
     INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
         # Тулбар только для INTERNAL_IPS.
-        # Через туннель (ngrok) REMOTE_ADDR тоже 127.0.0.1 — отличаем по X-Forwarded-For.
+        # Через туннель REMOTE_ADDR тоже 127.0.0.1 — отличаем по X-Forwarded-For.
         'SHOW_TOOLBAR_CALLBACK': lambda request: (
             request.META.get('HTTP_ACCEPT') != 'application/json'
             and request.META.get('REMOTE_ADDR') in INTERNAL_IPS
