@@ -3027,15 +3027,13 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   /* Нижнее меню и кнопка: короткая плотная тень вместо широкой дымки до края экрана. */
   .dx-tabbar, .dx-tabbar-toggle { --lg-drop: 0 4px 14px -6px rgb(20 30 80 / .22); }
   :root[data-theme="dark"] :is(.dx-tabbar, .dx-tabbar-toggle) { --lg-drop: 0 4px 14px -6px rgb(0 0 0 / .6); }
-  /* Телефон: стекло на самой шапке — Safari (iOS 26) продолжает его под строку статуса, без отдельной полосы сверху.
-     Слой ::before оставляет только блик и кромку. */
+  /* Телефон: размытие на самой шапке, а её фон полностью прозрачный — оттенок на ::before.
+     Safari (iOS 26) растягивает фон шапки под строку статуса сплошной полосой; прозрачный фон он не берёт и показывает там стекло. */
   .navbar.dx-glass-nav {
-    background-color: color-mix(in oklab, var(--color-base-100) 30%, transparent);
+    background-color: transparent;
     -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
   }
-  .dx-glass-nav::before { background-color: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .navbar.dx-glass-nav.dx-nav--on-dark { background-color: rgba(12, 16, 28, .34); }
-  .dx-glass-nav.dx-nav--on-dark::before { background-color: transparent; }
+  .dx-glass-nav::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
   /* Окно уведомлений внутри шапки — шторка снизу; размытие у родителя сдвинуло бы её, на время открытия снимаем. */
   html.nf-sheet-open .navbar.dx-glass-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
