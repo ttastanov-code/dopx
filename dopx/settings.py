@@ -542,6 +542,8 @@ if not DEBUG:
 
 # https за прокси (nginx на проде, туннель на ноутбуке) — иначе ссылки строятся как http://.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Туннель подменяет Host на localhost — настоящий адрес берём из X-Forwarded-Host. На проде по умолчанию выключено.
+USE_X_FORWARDED_HOST = os.getenv('USE_X_FORWARDED_HOST', str(DEBUG)).lower() in ('1', 'true', 'yes')
 
 # IP клиента берётся с конца X-Forwarded-For. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
 # За aaPanel -> nginx прокси два (docker-compose.yml задаёт 2).
