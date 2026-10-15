@@ -62,6 +62,7 @@
         const value = card.querySelector('.wz-slider-card__value');
         if (value) {
             value.textContent = '—';
+            value.dataset.max = el.max || '10';  // «8/10» — масштаб шкалы рядом со значением
         }
         addFormNote(el);
 

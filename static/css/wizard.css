@@ -360,3 +360,32 @@ div:has(> .wz-list:not(:has(> *))) > .wz-list-title { display: none; }
 .wz-slider-card--untouched .wizard-slider { background: color-mix(in oklab, var(--color-base-content) 4.5%, var(--color-base-100)); }
 /* Подписи 0 / 50 / 100 (судья) — мельче. */
 .wz-slider-card > input[type="hidden"] + div { font-size: 9px !important; opacity: .8; }
+
+/* ---- Шлифовка капсулы ---- */
+/* Деления — штрихи «линейки» у низа капсулы: шкала видна сразу, до значения — цветом. */
+.wz-ticks i { bottom: .32rem; width: 2px; height: 6px; margin-left: -1px; border-radius: 2px; background: color-mix(in oklab, var(--color-base-content) 13%, transparent); }
+.wz-ticks i.is-on { background: color-mix(in oklab, var(--color-primary) 62%, transparent); }
+.wz-slider-card--untouched .wz-ticks i { background: color-mix(in oklab, var(--color-base-content) 15%, transparent); }
+.wz-slider-card.is-dragging .wz-ticks i { transform: scaleY(1.35); }
+/* Нетронутая капсула — тонкий контур-приглашение вместо «выключенной» серой плашки. */
+.wz-slider-card--untouched .wizard-slider {
+    background: var(--color-base-100);
+    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-base-content) 9%, transparent);
+}
+.wz-slider-card--untouched:hover .wizard-slider { box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 35%, transparent); }
+/* Значение с масштабом шкалы: «8/10». */
+.wz-slider-card__value::after { content: "/" attr(data-max); margin-left: .08rem; font-size: .68rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 35%, transparent); letter-spacing: 0; }
+.wz-slider-card--untouched .wz-slider-card__value::after, .wz-slider-card__value:not([data-max])::after { content: none; }
+.wz-slider-card__value { min-width: 2.4rem; white-space: nowrap; }
+/* Тёмная тема: заливка ярче, контур светлее. */
+:root[data-theme="dark"] .wizard-slider {
+    background:
+      radial-gradient(1.6rem 70% at var(--wz-fill, 50%) 50%, color-mix(in oklab, var(--color-primary) 40%, transparent), transparent 70%),
+      linear-gradient(to right,
+        color-mix(in oklab, var(--color-primary) 18%, var(--color-base-100)) 0,
+        color-mix(in oklab, var(--color-primary) 55%, var(--color-base-100)) var(--wz-fill, 50%),
+        color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-100)) var(--wz-fill, 50%));
+}
+:root[data-theme="dark"] .wz-slider-card--untouched .wizard-slider { background: transparent; box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / .1); }
+:root[data-theme="dark"] .wz-slider-card__value { color: color-mix(in oklab, var(--color-primary) 60%, white); }
+:root[data-theme="dark"] .wz-slider-card--untouched .wz-slider-card__value { color: color-mix(in oklab, var(--color-base-content) 30%, transparent); }
