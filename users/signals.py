@@ -22,3 +22,12 @@ def on_progress_source_deleted(sender, instance, **kwargs):
 
     user_id = str(instance.user_id)
     transaction.on_commit(lambda: schedule_progress_recompute(user_id))
+
+
+@receiver(post_save, sender=UserBadge)
+@receiver(post_delete, sender=UserBadge)
+def reset_prestige(sender, instance, **kwargs):
+    """Новая или снятая медаль — витрина, звание и рамка пересчитываются."""
+    from users.prestige import invalidate
+
+    invalidate(instance.user_id)

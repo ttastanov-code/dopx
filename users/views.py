@@ -35,7 +35,8 @@ from analytics.models import EventName
 from analytics.services import track_event
 from core.utils import get_auth_panel_stats, get_client_ip, is_rate_limited, service_accounts_q
 from core.models import get_setting
-from users.badges import BADGE_CATALOG, RARITY_ORDER
+from users.badges import BADGE_CATALOG, RARITY_ORDER, badge_icon
+from users.prestige import SHOWCASE_MAX, invalidate as invalidate_prestige, prestige
 from users.models import Follow, User, UserBadge, UserXP
 from users.forms import (
     UserRegistrationForm, UserLoginForm, UserProfileForm,
@@ -355,10 +356,16 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
         from django.urls import reverse
 
         context = super().get_context_data(**kwargs)
+        from django.db.models import Count
+
         earned = {
             b.badge_type: b.awarded_at
             for b in UserBadge.objects.filter(user=self.request.user)
         }
+        # Редкость в цифрах: у какой доли болельщиков (с оценками) есть медаль. Мало людей — не показываем.
+        holders = dict(UserBadge.objects.values_list('badge_type').annotate(n=Count('id')))
+        fans = User.objects.filter(is_active=True, total_evaluations__gt=0).count()
+        pinned = prestige(self.request.user.pk)['pinned']
         catalog = []
         for code, definition in BADGE_CATALOG.items():
             is_earned = code in earned
@@ -370,6 +377,9 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
                 'is_secret': definition.is_secret,
                 'earned': is_earned,
                 'awarded_at': earned.get(code),
+                'icon': badge_icon(code),
+                'share_pct': (100 * holders.get(code, 0) / fans) if fans >= 100 else None,
+                'pinned': code in pinned,
                 # Ссылка на карточку — только для полученных достижений.
                 'share_url': self.request.build_absolute_uri(
                     reverse('users:badge_share_card', args=[self.request.user.username, code])
@@ -384,10 +394,33 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
             'legendary_catalog': legendary_catalog,
             'other_catalog': other_catalog,
             'earned_count': len(earned),
+            'pinned_count': len(pinned),
+            'showcase_max': SHOWCASE_MAX,
             'total_count': len(BADGE_CATALOG),
             'page_title': 'Достижения — DOPX',
         })
         return context
+
+
+class BadgePinView(LoginRequiredMixin, View):
+    """Закрепить достижение в витрине профиля или убрать (не больше SHOWCASE_MAX)."""
+
+    def post(self, request, code):
+        earned = UserBadge.objects.filter(user=request.user, badge_type=code).exists()
+        definition = BADGE_CATALOG.get(code)
+        pinned = [c for c in (request.user.showcase_badges or []) if c in BADGE_CATALOG]
+        if code in pinned:
+            pinned.remove(code)
+        elif not earned or definition is None or definition.is_secret:
+            messages.error(request, 'В витрину можно поставить только полученное и не секретное достижение.')
+        elif len(pinned) >= SHOWCASE_MAX:
+            messages.warning(request, f'В витрине уже {SHOWCASE_MAX} медали. Уберите одну, чтобы поставить эту.')
+        else:
+            pinned.append(code)
+        request.user.showcase_badges = pinned
+        request.user.save(update_fields=['showcase_badges'])
+        invalidate_prestige(request.user.pk)
+        return redirect(f"{reverse('users:badge_catalog')}#b-{code}")
 
 
 def public_progress(user) -> dict:
@@ -466,6 +499,7 @@ class PublicProfileView(TemplateView):
             'profile_user': profile_user,
             'stats': stats,
             'badges': badges,
+            'showcase': prestige(profile_user.pk)['showcase'],
             'xp': xp,
             'recent_evaluations': recent_evaluations,
             'is_own_profile': self.request.user == profile_user,
@@ -498,6 +532,11 @@ class BadgeShareCardView(View):
             raise Http404("Секретное достижение")
 
         user_badge = get_object_or_404(UserBadge, user=target_user, badge_type=code)
+        # Редкость в цифрах: каким по счёту получил и у какой доли болельщиков (с оценками) оно есть.
+        holders = UserBadge.objects.filter(badge_type=code)
+        serial = holders.filter(awarded_at__lte=user_badge.awarded_at).count()
+        fans = User.objects.filter(is_active=True, total_evaluations__gt=0).count()
+        share_pct = 100 * holders.count() / fans if fans >= 100 else None
 
         path = build_badge_share_card(
             username=target_user.username,
@@ -507,6 +546,8 @@ class BadgeShareCardView(View):
             rarity=definition.rarity,
             is_secret=definition.is_secret,
             awarded_at=user_badge.awarded_at,
+            serial=serial,
+            share_pct=share_pct,
         )
         return redirect(default_storage.url(path))
 

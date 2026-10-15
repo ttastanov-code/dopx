@@ -88,7 +88,9 @@ def build_player_season_recap_card(*, player_name: str, team_name: str, season_l
 
 
 def build_badge_share_card(*, username: str, badge_code: str, badge_name: str, badge_description: str,
-                           rarity: str, is_secret: bool, awarded_at) -> str:
-    """Достижение: огранённый камень в цвет редкости, чем реже — тем больше блеска."""
+                           rarity: str, is_secret: bool, awarded_at, serial: int | None = None,
+                           share_pct: float | None = None) -> str:
+    """Достижение: коллекционная медаль в цвет редкости; serial — каким по счёту получил, share_pct — у скольких болельщиков есть."""
     return cards.badge_card(username=username, name=badge_name, description=badge_description, rarity=rarity,
-                            secret=is_secret, date_label=awarded_at.strftime("%d.%m.%Y") if awarded_at else "")
+                            secret=is_secret, date_label=awarded_at.strftime("%d.%m.%Y") if awarded_at else "",
+                            code=badge_code, serial=serial, share_pct=share_pct)

@@ -33,6 +33,24 @@ def font_css() -> str:
     return "\n".join(out)
 
 
+@lru_cache(maxsize=1)
+def icon_font_css() -> str:
+    """Шрифт Tabler для иконок медалей — встраивается в страницу карточки."""
+    font = Path(settings.BASE_DIR) / "static" / "vendor" / "tabler-icons" / "fonts" / "tabler-icons.woff2"
+    data = base64.b64encode(font.read_bytes()).decode()
+    return f"@font-face{{font-family:'tabler';src:url(data:font/woff2;base64,{data}) format('woff2');}}"
+
+
+@lru_cache(maxsize=None)
+def icon_char(name: str) -> str:
+    """Символ иконки Tabler по имени (берётся из tabler-icons.min.css)."""
+    import re
+
+    css = (Path(settings.BASE_DIR) / "static" / "vendor" / "tabler-icons" / "tabler-icons.min.css").read_text()
+    m = re.search(r"\.ti-" + re.escape(name) + r':before\{content:"\\([0-9a-f]+)"', css)
+    return chr(int(m.group(1), 16)) if m else ""
+
+
 def _templates_hash() -> str:
     digest = hashlib.sha1()
     for f in sorted(TEMPLATE_DIR.glob("*.html")):

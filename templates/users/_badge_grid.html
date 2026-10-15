@@ -1,0 +1,33 @@
+{% load ui_extras %}
+{# Сетка медалей каталога (users/badge_catalog.html), items — список из BadgeCatalogView. #}
+<div class="dx-ach-grid">
+    {% for badge in items %}
+    <article id="b-{{ badge.code }}" class="dx-ach dx-ach--{{ badge.rarity }}{% if badge.earned %} is-earned{% endif %}">
+        <div class="dx-ach__medal">
+            {% if badge.earned %}{% include 'components/_medal.html' with rarity=badge.rarity icon=badge.icon size='lg' %}
+            {% else %}<span class="dx-medal dx-medal--lg dx-ach__locked" aria-hidden="true"><i class="ti {% if badge.is_secret %}ti-help{% else %}ti-{{ badge.icon }}{% endif %}"></i></span>{% endif %}
+        </div>
+        <div class="dx-ach__body">
+            <span class="dx-ach__rarity">{{ badge.rarity|rarity_label }}{% if badge.share_pct is not None %} · {% if badge.share_pct < 1 %}меньше 1%{% else %}{{ badge.share_pct|floatformat:0 }}%{% endif %} болельщиков{% endif %}</span>
+            <h3 class="dx-ach__name">{{ badge.name }}</h3>
+            <p class="dx-ach__desc">{{ badge.description }}</p>
+            {% if badge.earned %}
+            <p class="dx-ach__date"><i class="ti ti-check"></i> Получено {{ badge.awarded_at|date:"d.m.Y" }}</p>
+            <div class="dx-ach__actions">
+                <button type="button" class="btn btn-xs btn-primary" data-share data-share-url="{{ request.scheme }}://{{ request.get_host }}{% url 'users:public_profile' request.user.username %}" data-share-image="{{ badge.share_url }}" data-share-text="Достижение «{{ badge.name }}» на DOPX"
+                        onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'badge', badge_code: '{{ badge.code }}'})}">
+                    <i class="ti ti-share-3"></i><span data-share-label>Поделиться</span>
+                </button>
+                {% if not badge.is_secret %}
+                <form method="post" action="{% url 'users:badge_pin' badge.code %}">{% csrf_token %}
+                    <button type="submit" class="btn btn-xs {% if badge.pinned %}btn-outline btn-success{% else %}btn-ghost{% endif %}" aria-pressed="{% if badge.pinned %}true{% else %}false{% endif %}">
+                        <i class="ti {% if badge.pinned %}ti-pinned{% else %}ti-pin{% endif %}"></i>{% if badge.pinned %}В витрине{% else %}В витрину{% endif %}
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </article>
+    {% endfor %}
+</div>

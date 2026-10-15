@@ -2,6 +2,7 @@
 from django.urls import path
 from .views import (
     RegisterView, LoginView, LogoutView, ProfileView, PublicProfileView, BadgeCatalogView,
+    BadgePinView,
     BadgeShareCardView,
     UserLeaderboardView, PlayerLeaderboardView, CityLeaderboardView,
     ProfileEditView, PasswordChangeViewCustom,
@@ -21,6 +22,7 @@ urlpatterns = [
     path('profile/password/', PasswordChangeViewCustom.as_view(), name='password_change'),
     path('profile/notifications/', NotificationSettingsView.as_view(), name='notification_settings'),
     path('achievements/', BadgeCatalogView.as_view(), name='badge_catalog'),
+    path('achievements/<str:code>/pin/', BadgePinView.as_view(), name='badge_pin'),
     
     # Верификация
     path('verify-email-sent/', VerifyEmailSentView.as_view(), name='verify_email_sent'),

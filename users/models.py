@@ -77,6 +77,8 @@ class User(AbstractUser, BaseModel):
         _("Публичный профиль"), default=True,
         help_text=_("Если выключено — /u/<username>/ отдаёт 404 для всех, кроме вас самих"),
     )
+    # Витрина достижений: до трёх кодов, выбранных владельцем (users/prestige.py).
+    showcase_badges = models.JSONField(_("Витрина достижений"), default=list, blank=True)
     verification_token = models.UUIDField(
         _("Токен верификации"), default=uuid.uuid4, editable=False, null=True, blank=True
     )
@@ -305,6 +307,12 @@ class UserBadge(BaseModel):
     def rarity(self) -> str:
         d = self.definition
         return d.rarity if d else "bronze"
+
+    @property
+    def icon(self) -> str:
+        from users.badges import badge_icon
+
+        return badge_icon(self.badge_type)
 
     @property
     def rarity_order(self) -> int:

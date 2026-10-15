@@ -109,7 +109,7 @@
                                         {% endif %}
                                     </div>
                                 </div>
-                                <span class="{{ row_user|name_class }}">{{ row_user.username }}</span>{% if is_me %} <span class="opacity-60 font-normal">(это ты)</span>{% endif %}
+                                <span class="{{ row_user|name_class }}">{{ row_user.username }} {% user_title row_user "icon" %}</span>{% if is_me %} <span class="opacity-60 font-normal">(это ты)</span>{% endif %}
                             </a>
                         </td>
                         <td class="text-right font-mono">{{ row_user.trust_score|floatformat:2 }}</td>
@@ -170,7 +170,7 @@
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="font-medium {{ user|name_class }}">{{ user.username }}</div>
+                                    <div class="font-medium {{ user|name_class }}">{{ user.username }} {% user_title user "icon" %}</div>
                                     {% if user.city %}
                                     <div class="text-xs opacity-60">
                                         <i class="ti ti-map-pin"></i>

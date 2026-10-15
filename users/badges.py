@@ -277,3 +277,23 @@ BADGE_TYPE_CHOICES: list[tuple[str, str]] = [(code, d.name) for code, d in BADGE
 
 def get_badge_definition(code: str) -> BadgeDefinition | None:
     return BADGE_CATALOG.get(code)
+
+# Иконка медали (Tabler) — в карточке для соцсетей, витрине и каталоге.
+BADGE_ICONS: dict[str, str] = {
+    "first_evaluation": "star", "active_fan_10": "flame", "active_fan_50": "flame", "active_fan_150": "crown",
+    "streak_7": "calendar-check", "streak_30": "calendar-star", "streak_100": "calendar-bolt", "streak_250": "infinity",
+    "accurate_analyst": "target-arrow", "foresight": "eye", "bias_free": "scale", "early_bird": "sunrise",
+    "judge_of_judges": "gavel", "polyglot": "world", "first_prediction": "crystal-ball",
+    "prediction_streak_7": "chart-line", "prediction_streak_30": "crystal-ball", "prediction_streak_100": "eye-check",
+    "prediction_streak_200": "sparkles", "derby_hunter": "swords", "monthly_champion": "trophy", "founder": "rocket",
+    "coach_expert": "chess-knight", "both_sides": "arrows-left-right", "full_season": "calendar-stats",
+    "stable_hand": "hand-finger", "derby_prophet": "swords", "against_the_tide": "ripple", "perfect_tour": "diamond",
+    "season_completionist": "eye-check", "max_trust": "shield-check", "day_streak_7": "sun", "day_streak_30": "sun",
+    "day_streak_100": "flame", "day_streak_365": "bolt", "came_with_friend": "heart-handshake", "recruiter_1": "users",
+    "recruiter_5": "speakerphone", "recruiter_20": "users-group", "season_pass_10": "ticket", "season_pass_20": "award",
+    "season_pass_30": "medal",
+}
+
+
+def badge_icon(code: str) -> str:
+    return BADGE_ICONS.get(code, "medal")

@@ -1,0 +1,2 @@
+{# Мини-медаль достижения: металл по редкости и иконка. size — xs/sm/md/lg. Стили — css/ui.css (dx-medal). #}
+<span class="dx-medal dx-medal--{{ rarity }} dx-medal--{{ size|default:'md' }}{% if stale %} is-stale{% endif %}" aria-hidden="true"><i class="ti ti-{{ icon }}"></i></span>

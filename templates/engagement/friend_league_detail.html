@@ -34,7 +34,7 @@
             {% for row in rows %}
             <li class="dx-rank__row{% if row.user == user %} is-me{% endif %}">
                 <span class="dx-rank__place{% if row.place <= 3 and row.points %} is-top{% endif %}">{{ row.place }}</span>
-                <span class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }}</span>
+                <span class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }} {% user_title row.user "icon" %}</span>
                 <span class="dx-rank__meta">{% if row.total %}{{ row.accuracy }}% точность · {{ row.total }} {{ row.total|ru_plural:"прогноз,прогноза,прогнозов" }}{% else %}ещё нет решённых прогнозов{% endif %}</span>
                 <b class="dx-rank__value">{{ row.points }}</b>
             </li>

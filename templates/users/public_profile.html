@@ -29,6 +29,18 @@
                     </div>
                 </div>
                 <h2 class="text-2xl font-bold {{ profile_user|name_class }}">{{ profile_user.username }}</h2>
+                <div class="mt-1">{% user_title profile_user "md" %}</div>
+                {% if showcase %}
+                {# Витрина: до трёх медалей, которые выбрал владелец (иначе самые редкие). #}
+                <div class="dx-showcase">
+                    {% for b in showcase %}
+                    <a class="dx-showcase__item" href="{% url 'users:badge_share_card' profile_user.username b.code %}" target="_blank" rel="noopener" title="Открыть карточку достижения">
+                        {% include 'components/_medal.html' with rarity=b.rarity icon=b.icon size='lg' %}
+                        <span class="dx-showcase__name">{{ b.name }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
                 {% if is_own_profile %}
                 <span class="badge badge-ghost badge-sm mt-1">Это вы</span>
                 {% endif %}
@@ -120,15 +132,8 @@
                     {% for badge in badges %}
                     {# Статусный бейдж может быть «выцветшим» (is_stale) — пояснение в тултипе. #}
                     {% tooltip_wrap badge.tooltip_text %}
-                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2 relative
-                        {% if badge.is_stale %}opacity-40 grayscale{% endif %}
-                        {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
-                        {% elif badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
-                        {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
-                        {% elif badge.rarity == 'silver' %}bg-base-300/60 border-base-content/20 text-base-content/70
-                        {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
-                        {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
-                        <i class="ti {% if badge.rarity == 'legendary' %}ti-crown{% elif badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
+                    <div class="relative">
+                        {% include 'components/_medal.html' with rarity=badge.rarity icon=badge.icon size='md' stale=badge.is_stale %}
                         {% if badge.is_stale %}
                         <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-base-300 border border-base-100 flex items-center justify-center">
                             <i class="ti ti-clock-pause text-[10px]"></i>

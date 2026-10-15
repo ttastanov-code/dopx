@@ -333,7 +333,65 @@ RARITY = {
 RARITY_ACCENT = {"bronze": "orange", "silver": "blue", "gold": "amber", "platinum": "blue", "secret": "violet", "legendary": "pink"}
 
 
-def badge_card(*, username: str, name: str, description: str, rarity: str, secret: bool, date_label: str) -> str:
+# Металл медали (светлый, основной, глубокий, блик), свечение, фон, сила лучей, розетка, голограмма.
+MEDAL = {
+    "bronze": (("#FFE1C2", "#D08A52", "#6E3712", "#F4B987"), "#E08A4A", "#140B07", 10, False, False),
+    "silver": (("#FFFFFF", "#C7D0DD", "#5E6878", "#EEF3FA"), "#A9C0E0", "#0A0E15", 12, False, False),
+    "gold": (("#FFF7D1", "#F3C246", "#87580B", "#FFE594"), "#F5B83A", "#120C03", 18, True, False),
+    "platinum": (("#F4FCFF", "#A9DCF7", "#3C6E99", "#DDF4FF"), "#79C8F5", "#04101B", 18, True, False),
+    "secret": (("#F0E6FF", "#A88BF0", "#33206E", "#D3C1FF"), "#8B5CF6", "#090514", 16, True, False),
+    "legendary": (("#FFFBEA", "#F6C86A", "#7A3FA0", "#FFE6B0"), "#C77DFF", "#0B0516", 24, True, True),
+}
+
+
+def _medal_html(*, username, name, description, rarity, secret, date_label, code, serial, share_pct) -> str | None:
+    import math
+    import random
+
+    from core import cards_html
+    from users.badges import RARITY_LABELS, RARITY_ORDER, badge_icon
+
+    metal, glow, bg, rays, rosette, holo = MEDAL.get(rarity, MEDAL["bronze"])
+    # Розетка: 16 лучей звезды вокруг медали.
+    pts = []
+    for k in range(32):
+        a = math.pi * k / 16 - math.pi / 2
+        r = 50 if k % 2 == 0 else 43
+        pts.append(f"{50 + r * math.cos(a):.2f}% {50 + r * math.sin(a):.2f}%")
+    rnd = random.Random(code or name)  # искры одинаковые для одного достижения
+    n = {"bronze": 14, "silver": 18, "gold": 28, "platinum": 30, "secret": 30, "legendary": 44}.get(rarity, 16)
+    sparks = []
+    while len(sparks) < n:
+        x, y = rnd.uniform(40, 1040), rnd.uniform(140, 840)
+        if math.hypot(x - 540, y - 500) < 360:  # не на медали
+            continue
+        sparks.append({"x": round(x), "y": round(y), "r": round(rnd.uniform(2, 6), 1), "o": round(rnd.uniform(.35, 1), 2)})
+    order = RARITY_ORDER.get(rarity, 1)
+    stats = []
+    if share_pct is not None:
+        pct = "меньше 1%" if share_pct < 1 else f"{share_pct:.0f}%".replace(".", ",")
+        stats.append({"value": pct, "label": "болельщиков получили", "hl": True})
+    if serial:
+        stats.append({"value": f"№ {serial}", "label": "по счёту на DOPX", "hl": share_pct is None})
+    if date_label:
+        stats.append({"value": date_label, "label": "дата получения"})
+    word = "DOPX · ГОЛОС ТРИБУН · "
+    ctx = {"m": metal, "glow": glow, "bg": bg, "ray_alpha": rays, "rosette": rosette, "holo": holo,
+           "star_points": ", ".join(pts), "sparks": sparks, "icon": cards_html.icon_char(badge_icon(code)),
+           "icon_css": cards_html.icon_font_css(), "engrave": (word * 4).strip(),
+           "gems": [i < order for i in range(6)], "rarity_label": RARITY_LABELS.get(rarity, ""),
+           "name": name, "description": description, "stats": stats, "username": username}
+    return cards_html.render("cards/html/badge.html", ctx, prefix="badge", size=(1080, 1350),
+                             key_parts=(username, code, name, description, rarity, secret, date_label, serial,
+                                        None if share_pct is None else round(share_pct)))
+
+
+def badge_card(*, username: str, name: str, description: str, rarity: str, secret: bool, date_label: str,
+               code: str = "", serial: int | None = None, share_pct: float | None = None) -> str:
+    html = _medal_html(username=username, name=name, description=description, rarity=rarity, secret=secret,
+                       date_label=date_label, code=code, serial=serial, share_pct=share_pct)
+    if html:
+        return html
     import math
 
     top, bot, deep, label, n_dots, n_sparkles = RARITY.get(rarity, RARITY["bronze"])

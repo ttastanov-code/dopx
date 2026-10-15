@@ -100,7 +100,7 @@
                 {% for row in top %}
                 <li class="dx-rank__row{% if row.user == user %} is-me{% endif %}">
                     <span class="dx-rank__place{% if row.place <= 3 %} is-top{% endif %}">{{ row.place }}</span>
-                    <a href="{% url 'users:public_profile' row.user.username %}" class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }}</a>
+                    <a href="{% url 'users:public_profile' row.user.username %}" class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }} {% user_title row.user "icon" %}</a>
                     <span class="dx-rank__meta">ур. {{ row.level }}</span>
                     <b class="dx-rank__value">{{ row.xp }} XP</b>
                 </li>
