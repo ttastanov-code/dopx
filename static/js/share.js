@@ -28,21 +28,61 @@
         catch (e) { window.prompt('Скопируйте ссылку', text); }
     }
 
+    // Картинки скачиваются заранее: Safari на iPhone открывает меню «Поделиться» только сразу после нажатия,
+    // а ожидание загрузки (генерация карточки — несколько секунд) это разрешение сжигает.
+    const touch = window.matchMedia('(pointer: coarse)').matches;
+    const files = new Map();  // url → File или Promise
+    function prefetch(url) {
+        if (!url || files.has(url)) return files.get(url);
+        const job = fetch(url, { credentials: 'same-origin' })
+            .then((r) => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+            .then((b) => { const f = new File([b], 'dopx.png', { type: b.type || 'image/png' }); files.set(url, f); return f; })
+            .catch(() => { files.delete(url); return null; });
+        files.set(url, job);
+        return job;
+    }
+    const ready = (url) => (files.get(url) instanceof File ? files.get(url) : null);
+    const imageOf = (el) => el.dataset.story || el.dataset.shareImage;
+
+    if (touch) {
+        // По очереди после загрузки страницы и сразу при касании кнопки.
+        const warm = async () => {
+            for (const el of document.querySelectorAll('[data-story], [data-share-image]')) await prefetch(imageOf(el));
+        };
+        window.addEventListener('load', () => setTimeout(warm, 600));
+        document.addEventListener('pointerdown', (e) => {
+            const el = e.target.closest('[data-story], [data-share-image]');
+            if (el) prefetch(imageOf(el));
+        }, { passive: true });
+    }
+
+    // Картинка ещё готовится: на кнопке крутится загрузка, по готовности — обычная иконка, нажать снова.
+    function waitFor(btn, url) {
+        const icon = btn.querySelector('.ti');
+        if (!icon || btn.classList.contains('is-loading')) return;
+        const old = icon.className;
+        btn.classList.add('is-loading');
+        btn.setAttribute('aria-busy', 'true');
+        icon.className = 'ti ti-loader-2 dx-spin';
+        Promise.resolve(prefetch(url)).then(() => {
+            icon.className = old;
+            btn.classList.remove('is-loading');
+            btn.removeAttribute('aria-busy');
+        });
+    }
+
     // Сторис: только картинка, без текста — так Instagram сразу открывает её как историю.
-    async function shareStory(btn) {
+    function shareStory(btn) {
         const url = btn.dataset.story;
-        const touch = window.matchMedia('(pointer: coarse)').matches;
         if (touch && navigator.share && navigator.canShare) {
-            try {
-                const blob = await (await fetch(url, { credentials: 'same-origin' })).blob();
-                const file = new File([blob], 'dopx-story.png', { type: blob.type || 'image/png' });
-                if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
-            } catch (e) { if (e.name === 'AbortError') return; }
+            const file = ready(url);
+            if (!file) { waitFor(btn, url); return; }
+            if (navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(() => {}); return; }
         }
         window.open(url, '_blank', 'noopener');
     }
 
-    document.addEventListener('click', async (event) => {
+    document.addEventListener('click', (event) => {
         const copyBtn = event.target.closest('[data-copy]');
         if (copyBtn) { event.preventDefault(); copy(copyBtn.dataset.copy, copyBtn); return; }
 
@@ -57,17 +97,11 @@
         if (navigator.share) {
             // Ссылка — в тексте отдельной строкой: часть мессенджеров склеивает url и text без пробела.
             const data = { text: text ? text + '\n' + url : url };
-            const image = btn.dataset.shareImage;
-            // Файл — только на телефонах: десктопный Chrome отдаёт получателю удалённый временный файл.
-            const touch = window.matchMedia('(pointer: coarse)').matches;
-            if (image && touch && navigator.canShare) {
-                try {
-                    const blob = await (await fetch(image, { credentials: 'same-origin' })).blob();
-                    const file = new File([blob], 'dopx.png', { type: blob.type || 'image/png' });
-                    if (navigator.canShare({ files: [file] })) data.files = [file];
-                } catch (e) { /* без картинки — только ссылка */ }
-            }
-            try { await navigator.share(data); return; } catch (e) { if (e.name === 'AbortError') return; }
+            // Файл — только на телефонах и только если уже скачан (без ожидания после нажатия).
+            const file = touch ? ready(btn.dataset.shareImage) : null;
+            if (file && navigator.canShare && navigator.canShare({ files: [file] })) data.files = [file];
+            navigator.share(data).catch((e) => { if (e.name !== 'AbortError') copy(url, btn); });
+            return;
         }
         copy(url, btn);
     });

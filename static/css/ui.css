@@ -3165,3 +3165,7 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-tabbar__avatar.dx-frame--legendary { box-shadow: 0 0 8px 1px rgb(199 125 255 / .45); }
 .dx-tabbar__avatar.dx-frame--legendary::after { padding: 2px; }
 .dx-tabbar__item:not(.is-active) .dx-tabbar__avatar.dx-frame { opacity: 1; }
+/* Кнопка ждёт картинку для сторис (share.js). */
+.dx-spin { display: inline-block; animation: dx-spin .8s linear infinite; }
+@keyframes dx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dx-spin { animation-duration: 2.4s; } }
