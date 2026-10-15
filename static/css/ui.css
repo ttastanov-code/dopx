@@ -678,6 +678,8 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     scrollbar-width: none;
 }
 .dx-chips::-webkit-scrollbar { display: none; }
+/* На ПК мышью горизонтально не листают — вкладки переносятся на вторую строку. */
+@media (min-width: 768px) { .dx-chips { flex-wrap: wrap; overflow-x: visible; } }
 .dx-chip {
     display: inline-flex;
     align-items: center;
@@ -1702,6 +1704,8 @@ html[data-mourning] { filter: grayscale(1); }
 
 /* ---------- Мобильное меню (панель слева) ---------- */
 .dx-drawer { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+/* Закрытая шторка вне разметки (Safari красит полосы браузера даже по невидимым слоям); is-ready — на время анимации. */
+.dx-drawer:not(.is-ready):not(.is-open) { display: none; }
 .dx-drawer.is-open { pointer-events: auto; }
 .dx-drawer__backdrop {
     position: absolute;
@@ -2942,21 +2946,21 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-tabbar-toggle { display: none; }
 @media (max-width: 767px) {
   .dx-tabbar {
-    left: auto; right: calc(.75rem + 3.5rem + .5rem); margin: 0; max-width: none;
-    width: calc(100% - 1.5rem - 3.5rem - .5rem);
+    left: auto; right: calc(.75rem + 3.75rem + .5rem); margin: 0; max-width: none;
+    width: calc(100% - 1.5rem - 3.75rem - .5rem);
     transition: width .46s cubic-bezier(.32, .72, 0, 1), right .46s cubic-bezier(.32, .72, 0, 1), opacity .2s ease;
   }
   .dx-tabbar > * { transition: opacity .2s ease .16s; }
   /* Свёрнута: капсула сжимается вправо до размера кнопки и растворяется в ней; содержимое гаснет первым. */
   .dx-tabbar-min .dx-tabbar {
-    right: .75rem; width: 3.5rem; opacity: 0; pointer-events: none;
+    right: .75rem; width: 3.75rem; opacity: 0; pointer-events: none;
     transition: width .42s cubic-bezier(.32, .72, 0, 1), right .42s cubic-bezier(.32, .72, 0, 1), opacity .16s ease .28s;
   }
   .dx-tabbar-min .dx-tabbar > * { opacity: 0; transition: opacity .1s ease; }
 
   .dx-tabbar-toggle {
     position: fixed; right: .75rem; bottom: calc(.55rem + env(safe-area-inset-bottom, 0px)); z-index: 46;
-    display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 999px;
+    display: grid; place-items: center; width: 3.75rem; height: 3.75rem; border-radius: 999px;
     color: var(--color-base-content); font-size: 1.45rem; cursor: pointer;
     -webkit-tap-highlight-color: transparent; isolation: isolate;
     background: color-mix(in oklab, var(--color-base-100) 46%, transparent);
@@ -2987,9 +2991,35 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 
   /* Липкая кнопка матча: при свёрнутом меню опускается вниз, оставляя место кнопке справа. */
   body.has-tabbar .dx-sticky-cta { transition: bottom .4s cubic-bezier(.32, .72, 0, 1), right .4s cubic-bezier(.32, .72, 0, 1); }
-  .dx-tabbar-min body.has-tabbar .dx-sticky-cta { bottom: calc(.55rem + env(safe-area-inset-bottom, 0px)); right: calc(.75rem + 3.5rem + .5rem); }
+  .dx-tabbar-min body.has-tabbar .dx-sticky-cta { bottom: calc(.55rem + env(safe-area-inset-bottom, 0px)); right: calc(.75rem + 3.75rem + .5rem); }
   .dx-tabbar-min body.has-tabbar { padding-bottom: calc(4.6rem + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 767px) and (prefers-reduced-motion: reduce) {
   .dx-tabbar, .dx-tabbar > *, .dx-tabbar-toggle i, body.has-tabbar .dx-sticky-cta { transition: none; }
+}
+
+/* ---------- Липкая плашка «Оцените матч»: тонкая капсула в ритм нижнего меню ---------- */
+@media (max-width: 767px) {
+  .dx-sticky-cta {
+    left: .75rem; right: .75rem; gap: .6rem; min-height: 3.4rem;
+    padding: .35rem .35rem .35rem 1.1rem; border-radius: 1.9rem;
+    transition: bottom .4s cubic-bezier(.32, .72, 0, 1), right .4s cubic-bezier(.32, .72, 0, 1), opacity .25s ease, transform .3s cubic-bezier(.32, .72, 0, 1);
+  }
+  body.has-tabbar .dx-sticky-cta { bottom: calc(.55rem + 3.75rem + .5rem + env(safe-area-inset-bottom, 0px)); }
+  .dx-sticky-cta.is-hidden { opacity: 0; transform: translateY(.75rem) scale(.98); pointer-events: none; }
+  .dx-sticky-cta__title { font-size: .875rem; line-height: 1.2; }
+  .dx-sticky-cta .dx-sticky-cta__meta { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; font-weight: 500; }
+  .dx-sticky-cta__meta .ti { font-size: .85rem; opacity: .7; }
+  .dx-sticky-cta__button { min-height: 2.7rem; padding: 0 1.15rem; border-radius: 999px; }
+  /* Кнопка-переключатель по высоте и центру совпадает с капсулой меню. */
+  .dx-tabbar { min-height: 3.75rem; }
+}
+
+/* ---------- Safari (iOS 26): полосы браузера ---------- */
+/* Safari красит строку статуса и нижнюю панель по фиксированным слоям у краёв экрана — даже скрытым через opacity/visibility.
+   Поэтому закрытые слои (загрузка, шторки) убираются через display: none. */
+/* Свёрнутая панель полностью убирается после анимации — иначе Safari видит её у нижнего края. */
+@media (max-width: 767px) {
+  .dx-tabbar { visibility: visible; }
+  .dx-tabbar-min .dx-tabbar { visibility: hidden; transition: width .42s cubic-bezier(.32, .72, 0, 1), right .42s cubic-bezier(.32, .72, 0, 1), opacity .16s ease .28s, visibility 0s linear .45s; }
 }

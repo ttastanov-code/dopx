@@ -128,6 +128,36 @@
         });
     });
 
+    // Пальцем: тап по капсуле ставит значение, горизонтальный жест тянет; вертикальный — прокрутка страницы (touch-action: pan-y).
+    // Нужно для iPhone: Safari двигает ползунок только за саму ручку, а она тонкая.
+    function setFromX(el, clientX) {
+        const r = el.getBoundingClientRect();
+        const min = parseFloat(el.min || '0'), max = parseFloat(el.max || '100'), step = parseFloat(el.step || '1');
+        const pct = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+        const v = Math.min(max, Math.max(min, Math.round((min + pct * (max - min)) / step) * step));
+        if (String(v) !== el.value || el.closest('.wz-slider-card--untouched')) {
+            el.value = v;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    let drag = null;
+    document.addEventListener('pointerdown', function (e) {
+        if (e.pointerType !== 'touch' || !e.target.classList || !e.target.classList.contains('wizard-slider')) return;
+        drag = { el: e.target, x: e.clientX, y: e.clientY, moved: false };
+    }, { passive: true });
+    document.addEventListener('pointermove', function (e) {
+        if (!drag) return;
+        if (!drag.moved && Math.abs(e.clientX - drag.x) > 6 && Math.abs(e.clientX - drag.x) > Math.abs(e.clientY - drag.y)) drag.moved = true;
+        if (drag.moved) setFromX(drag.el, e.clientX);
+    }, { passive: true });
+    document.addEventListener('pointerup', function (e) {
+        if (!drag) return;
+        if (!drag.moved && Math.abs(e.clientY - drag.y) < 8) setFromX(drag.el, e.clientX);
+        drag = null;
+    });
+    document.addEventListener('pointercancel', function () { drag = null; });
+
     document.addEventListener('DOMContentLoaded', function () { initAll(); });
     // Слайдеры в свёрнутых карточках появляются позже — инициализируем повторно.
     document.addEventListener('alpine:init', function () { setTimeout(initAll, 0); });

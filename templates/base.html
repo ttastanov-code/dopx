@@ -8,7 +8,8 @@
     <meta charset="UTF-8">
     {# Без maximum-scale/user-scalable=no — pinch-zoom должен работать (WCAG 1.4.4). #}
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#000000">
+    {# Цвет полос браузера = фон страницы; обновляется при смене темы (скрипт ниже). #}
+    <meta name="theme-color" content="#ffffff">
     {# SEO #}
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
     {# meta_description/og_image — из контекста вьюхи, иначе дефолт. #}
@@ -70,6 +71,16 @@
     <script>
         const savedTheme = localStorage.getItem('theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
+        // Полосы браузера в цвет фона темы.
+        const syncThemeColor = () => {
+            const bg = getComputedStyle(document.body || document.documentElement).backgroundColor;
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta && bg && bg !== 'rgba(0, 0, 0, 0)') meta.setAttribute('content', bg);
+        };
+        document.addEventListener('DOMContentLoaded', () => {
+            syncThemeColor();
+            new MutationObserver(syncThemeColor).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+        });
         // Свёрнутая нижняя панель — до отрисовки, без мигания (_mobile_tabbar.html).
         try { if (localStorage.getItem('dx-tabbar') === 'min') document.documentElement.classList.add('dx-tabbar-min'); } catch (e) {}
         // Восстановление прокрутки берём под свой контроль до первой отрисовки (scroll-restore.js).
@@ -402,9 +413,11 @@
             position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; pointer-events: none;
             background: color-mix(in oklab, var(--color-base-100) 28%, transparent);
             -webkit-backdrop-filter: blur(2.5px); backdrop-filter: blur(2.5px);
-            opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s;
+            display: none;
         }
-        body.dopx-loading-slow #global-loader-logo { opacity: 1; visibility: visible; transition: opacity .25s ease; }
+        /* Пока не грузится — display: none: иначе Safari (iOS 26) красит полосы браузера по скрытому слою. */
+        body.dopx-loading-slow #global-loader-logo { display: grid; animation: dopx-fade-in .25s ease both; }
+        @keyframes dopx-fade-in { from { opacity: 0; } to { opacity: 1; } }
         #global-loader-logo .dx-logo-spin { transform: scale(.9); transition: transform .3s cubic-bezier(.16, 1, .3, 1); }
         body.dopx-loading-slow #global-loader-logo .dx-logo-spin { transform: none; }
         {% block extra_style %}{% endblock %}

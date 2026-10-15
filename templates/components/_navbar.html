@@ -211,6 +211,8 @@ document.addEventListener('DOMContentLoaded', function () {
         menu = menu || current;
         if (!menu) return;
         menu.classList.remove('is-open');
+        clearTimeout(menu._hideTimer);
+        menu._hideTimer = setTimeout(() => { if (!menu.classList.contains('is-open')) menu.classList.remove('is-ready'); }, 450);
         menu.setAttribute('aria-hidden', 'true');
         menu.querySelector('.dx-drawer__panel').style.transform = '';
         document.querySelectorAll('[data-drawer-open="' + menu.id + '"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
@@ -218,6 +220,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     function open(menu) {
         if (current && current !== menu) close(current);
+        clearTimeout(menu._hideTimer);
+        menu.classList.add('is-ready');
+        void menu.offsetWidth; // кадр с закрытым положением — чтобы анимация открытия сработала
         menu.classList.add('is-open');
         menu.setAttribute('aria-hidden', 'false');
         document.querySelectorAll('[data-drawer-open="' + menu.id + '"]').forEach((b) => b.setAttribute('aria-expanded', 'true'));

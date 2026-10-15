@@ -253,3 +253,53 @@ div:has(> .wz-list:not(:has(> *))) > .wz-list-title { display: none; }
     .wizard-slider::-webkit-slider-thumb, .wz-select-card, .wz-select-card__check, .wz-top__steps li, .wz-sticky-nav .btn-primary { transition: none !important; }
     ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
+
+/* ============================================================
+   КРИТЕРИЙ = ОДНА КАПСУЛА: название и значение внутри, заливка мягким тоном, тонкая ручка на краю.
+   Вдвое ниже прежнего «подпись + трек». Разметка та же (.wz-slider-card > шапка + input).
+   ============================================================ */
+.wz-slider-card { position: relative; padding: 0; border-top: 0; margin-top: .5rem; }
+.wz-slider-card:first-child { margin-top: 0; padding-top: 0; }
+.wz-player__sliders .wz-slider-card, .wz-player__sliders .wz-slider-card:first-of-type { padding: 0; margin-top: .4rem; }
+.space-y-3\.5 > .wz-slider-card { margin-top: .5rem !important; }
+.space-y-3\.5 > .wz-slider-card:first-child { margin-top: 0 !important; }
+/* Шапка лежит поверх трека и не мешает тянуть. */
+.wz-slider-card > div:first-child {
+    position: absolute; inset: 0 0 auto 0; height: 2.75rem; z-index: 1; margin: 0 !important;
+    padding: 0 .95rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    pointer-events: none;
+}
+.wz-slider-card > div:first-child label { font-size: .875rem !important; font-weight: 600; line-height: 1.15; color: var(--color-base-content); }
+.wz-slider-card > div:first-child :is(button, [role="button"], a, .relative) { pointer-events: auto; }
+.wz-slider-card__value { font-size: .95rem; min-width: 1.6rem; }
+
+.wizard-slider, .wz-player__sliders .wizard-slider {
+    display: block; height: 2.75rem; margin: 0; border-radius: .95rem; touch-action: pan-y;
+    background:
+      linear-gradient(to right,
+        color-mix(in oklab, var(--color-primary) 20%, var(--color-base-100)) 0,
+        color-mix(in oklab, var(--color-primary) 20%, var(--color-base-100)) var(--wz-fill, 50%),
+        color-mix(in oklab, var(--color-base-content) 5%, var(--color-base-100)) var(--wz-fill, 50%));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    transition: box-shadow .2s ease;
+}
+.wz-slider-card--untouched .wizard-slider {
+    background: color-mix(in oklab, var(--color-base-content) 5%, var(--color-base-100));
+}
+.wizard-slider:active { box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 45%, transparent); }
+/* Ручка — тонкая полоска на краю заливки. */
+.wizard-slider::-webkit-slider-thumb {
+    width: 4px; height: 1.6rem; border-radius: 4px; background: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-base-100), 0 1px 4px rgb(0 0 0 / .18); cursor: ew-resize;
+}
+.wizard-slider::-moz-range-thumb {
+    width: 4px; height: 1.6rem; border-radius: 4px; background: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-base-100), 0 1px 4px rgb(0 0 0 / .18); cursor: ew-resize;
+}
+.wizard-slider:active::-webkit-slider-thumb { transform: scaleY(1.12); }
+.wizard-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 5px color-mix(in oklab, var(--color-primary) 35%, transparent); }
+.wz-slider-card--untouched .wizard-slider::-webkit-slider-thumb { background: color-mix(in oklab, var(--color-base-content) 30%, transparent); }
+.wz-slider-card--untouched .wizard-slider::-moz-range-thumb { background: color-mix(in oklab, var(--color-base-content) 30%, transparent); }
+/* Деления шкалы под капсулой (судья) — тише и ближе. */
+.wz-slider-card > .wizard-slider + input[type="hidden"] + div, .wz-slider-card > .wizard-slider + div { margin-top: .25rem !important; }
+:root[data-theme="dark"] .wizard-slider { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .07); }

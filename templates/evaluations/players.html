@@ -349,11 +349,15 @@
                 row.classList.toggle('is-selected', row.dataset.playerId === own);
                 row.disabled = !!other && row.dataset.playerId === other;
             });
+            clearTimeout(sheet._hideTimer);
+            sheet.classList.add('is-ready');
+            void sheet.offsetWidth;
             sheet.classList.add('is-open');
             sheet.setAttribute('aria-hidden', 'false');
         }
         function closePick() {
             sheet.classList.remove('is-open');
+            sheet._hideTimer = setTimeout(function () { if (!sheet.classList.contains('is-open')) sheet.classList.remove('is-ready'); }, 450);
             sheet.setAttribute('aria-hidden', 'true');
         }
         document.querySelectorAll('[data-pick]').forEach(function (btn) {

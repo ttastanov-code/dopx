@@ -1,7 +1,7 @@
 // static/js/smart-back-links.js
 //
-// Ссылки «Назад к …» с data-back-link: если пришли с нашего сайта — history.back()
-// (сохраняются фильтры, страница и прокрутка), иначе обычный переход по href.
+// Ссылки «Назад к …» с data-back-link: если пришли со страницы, куда ведёт ссылка, — history.back()
+// (сохраняются фильтры, страница и прокрутка), иначе обычный переход по href (например, после мастера оценки).
 (function () {
   document.addEventListener('click', function (event) {
     // Клики с модификаторами и не левой кнопкой — не трогаем.
@@ -13,15 +13,17 @@
     var link = event.target.closest('[data-back-link]');
     if (!link) return;
 
-    // history.back() только если referrer — наш сайт.
-    var sameOriginReferrer = false;
+    // history.back() только если предыдущая страница — та самая, куда ведёт ссылка (фильтры в query не важны).
+    var cameFromTarget = false;
     try {
-      sameOriginReferrer = !!document.referrer && new URL(document.referrer).origin === location.origin;
+      var ref = document.referrer && new URL(document.referrer);
+      var target = new URL(link.href, location.href);
+      cameFromTarget = !!ref && ref.origin === location.origin && ref.pathname === target.pathname;
     } catch (e) {
-      sameOriginReferrer = false;
+      cameFromTarget = false;
     }
 
-    if (sameOriginReferrer && window.history.length > 1) {
+    if (cameFromTarget && window.history.length > 1) {
       event.preventDefault();
       window.history.back();
     }

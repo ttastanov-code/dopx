@@ -422,10 +422,10 @@
 </div>
 {# Липкая кнопка оценки на телефоне: пока идёт голосование и матч ещё не оценён. Стили — css/ui.css. #}
 {% if voting_open and not user_has_evaluated %}
-<div class="dx-sticky-cta md:hidden">
+<div class="dx-sticky-cta md:hidden" data-sticky-cta>
     <div class="dx-sticky-cta__text">
         <span class="dx-sticky-cta__title">Оцените матч</span>
-        <span class="dx-sticky-cta__meta"><span data-countdown="{{ match.voting_open_until|date:'c' }}" data-countdown-prefix="Голосование закроется через " data-countdown-done="Голосование закрывается">Голосование закроется через {{ match.voting_open_until|timeuntil }}</span></span>
+        <span class="dx-sticky-cta__meta"><i class="ti ti-clock" aria-hidden="true"></i><span data-countdown="{{ match.voting_open_until|date:'c' }}" data-countdown-prefix="ещё " data-countdown-done="голосование закрывается">ещё {{ match.voting_open_until|timeuntil }}</span></span>
     </div>
     {% if user.is_authenticated %}
     <a href="{% url 'evaluations:context' match.id %}" class="dx-sticky-cta__button"><i class="ti ti-dopx-rate"></i> Оценить</a>
@@ -433,5 +433,22 @@
     <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="dx-sticky-cta__button"><i class="ti ti-login"></i> Войти</a>
     {% endif %}
 </div>
+<script>
+// Пока кнопка «Оценить матч» в шапке на экране — липкая не нужна, прячем её (шапка перерисовывается — следим заново).
+(() => {
+    const sticky = document.querySelector('[data-sticky-cta]');
+    if (!sticky || !('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(([e]) => sticky.classList.toggle('is-hidden', e.isIntersecting));
+    let watched = null;
+    const watch = () => {
+        const cta = document.querySelector('.mh__cta');
+        if (cta === watched) return;
+        io.disconnect(); watched = cta;
+        if (cta) io.observe(cta); else sticky.classList.remove('is-hidden');
+    };
+    watch();
+    document.addEventListener('htmx:afterSettle', watch);
+})();
+</script>
 {% endif %}
 {% endblock %}

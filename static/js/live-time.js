@@ -18,17 +18,18 @@
     }
 
     function formatLeft(ms) {
-        if (ms < 60000) return `${Math.max(1, Math.ceil(ms / 1000))} с`;
+        // Неразрывный пробел (\u00a0): число не отрывается от единицы при переносе.
+        if (ms < 60000) return `${Math.max(1, Math.ceil(ms / 1000))}\u00a0с`;
         const minutes = Math.round(ms / 60000);
         const days = Math.floor(minutes / 1440);
         const hours = Math.floor((minutes % 1440) / 60);
         const mins = minutes % 60;
         if (days >= 1) {
-            const d = `${days} ${plural(days, ['день', 'дня', 'дней'])}`;
-            return hours ? `${d} ${hours} ч` : d;
+            const d = `${days}\u00a0${plural(days, ['день', 'дня', 'дней'])}`;
+            return hours ? `${d} ${hours}\u00a0ч` : d;
         }
-        if (hours >= 1) return mins ? `${hours} ч ${mins} мин` : `${hours} ч`;
-        return `${mins} мин`;
+        if (hours >= 1) return mins ? `${hours}\u00a0ч ${mins}\u00a0мин` : `${hours}\u00a0ч`;
+        return `${mins}\u00a0мин`;
     }
 
     // force — данные изменились (версия, live-refresh.js): будим всех, даже с будущим data-wake-at

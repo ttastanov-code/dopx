@@ -26,6 +26,10 @@
         </a>
         {% endfor %}
     </nav>
+    <script>
+    // Телефон: выбранная вкладка видна сразу, даже если она в конце ленты.
+    (() => { const a = document.querySelector('.dx-chips .dx-chip.is-active'); if (a) a.scrollIntoView({ block: 'nearest', inline: 'center' }); })();
+    </script>
     <form method="get" class="dx-filters">
         {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
         <select name="league" class="select select-bordered select-sm" aria-label="Лига" onchange="this.form.requestSubmit()">
