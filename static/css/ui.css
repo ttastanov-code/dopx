@@ -3169,3 +3169,6 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-spin { display: inline-block; animation: dx-spin .8s linear infinite; }
 @keyframes dx-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dx-spin { animation-duration: 2.4s; } }
+.dx-share__alt.is-ready { animation: dx-ready-pulse 1.2s ease-out 2; }
+@keyframes dx-ready-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 55%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
+@media (prefers-reduced-motion: reduce) { .dx-share__alt.is-ready { animation: none; outline: 2px solid var(--color-primary); } }

@@ -11,5 +11,8 @@ ACCENTS = {"fan_top": "green", "season": "amber", "day_streak": "orange", "predi
 def build_story_card(*, kind: str, eyebrow: str, number_text: str, label_line1: str, label_line2: str = "",
                      footer_note: str = "", image_url: str = "") -> str:
     """eyebrow — рубрика, number_text — главное число, label — подпись, image_url — фото игрока в кольце."""
+    from core.services.share_cards import KIND_ICONS
+
     return cards.story(accent_name=ACCENTS.get(kind, "violet"), chip=eyebrow.upper(), number=number_text,
-                       label=label_line1, sub=label_line2, footer_note=footer_note, image_url=image_url)
+                       label=label_line1, sub=label_line2, footer_note=footer_note, image_url=image_url,
+                       icon=KIND_ICONS.get(kind, "star"))

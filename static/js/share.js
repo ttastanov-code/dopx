@@ -68,6 +68,9 @@
             icon.className = old;
             btn.classList.remove('is-loading');
             btn.removeAttribute('aria-busy');
+            // Готово — короткая подсветка: «нажмите ещё раз».
+            btn.classList.add('is-ready');
+            setTimeout(() => btn.classList.remove('is-ready'), 2400);
         });
     }
 

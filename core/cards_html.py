@@ -58,21 +58,60 @@ def _templates_hash() -> str:
     return digest.hexdigest()[:10]
 
 
-def _screenshot(html: str, size: tuple[int, int]) -> bytes:
-    from playwright.sync_api import sync_playwright
+class _Renderer:
+    """Один Chromium на процесс в своём потоке: запуск ~1–3 с платим один раз, дальше карточка ~0,3 с.
+    Sync-API Playwright привязан к потоку, поэтому запросы из потоков Django идут через очередь."""
 
-    with sync_playwright() as pw:
+    def __init__(self):
+        import queue
+        import threading
+
+        self.jobs = queue.Queue()
+        threading.Thread(target=self._loop, name="cards-chromium", daemon=True).start()
+
+    def _launch(self, pw):
         try:
-            browser = pw.chromium.launch(args=["--no-sandbox", "--font-render-hinting=none"])
+            return pw.chromium.launch(args=["--no-sandbox", "--font-render-hinting=none"])
         except Exception:  # на ноутбуке нет скачанного Chromium — берём установленный Chrome
-            browser = pw.chromium.launch(channel="chrome", args=["--font-render-hinting=none"])
-        try:
-            page = browser.new_page(viewport={"width": size[0], "height": size[1]}, device_scale_factor=SCALE)
-            page.set_content(html, wait_until="load")
-            page.evaluate("document.fonts.ready.then(() => window.__fit && window.__fit())")
-            return page.screenshot(type="png", clip={"x": 0, "y": 0, "width": size[0], "height": size[1]})
-        finally:
-            browser.close()
+            return pw.chromium.launch(channel="chrome", args=["--font-render-hinting=none"])
+
+    def _loop(self):
+        from playwright.sync_api import sync_playwright
+
+        pw = browser = None
+        while True:
+            html, size, future = self.jobs.get()
+            try:
+                if browser is None or not browser.is_connected():
+                    pw = pw or sync_playwright().start()
+                    browser = self._launch(pw)
+                page = browser.new_page(viewport={"width": size[0], "height": size[1]}, device_scale_factor=SCALE)
+                try:
+                    page.set_content(html, wait_until="load")
+                    page.evaluate("document.fonts.ready.then(() => window.__fit && window.__fit())")
+                    future.set_result(page.screenshot(type="png", clip={"x": 0, "y": 0, "width": size[0], "height": size[1]}))
+                finally:
+                    page.close()
+            except Exception as e:
+                browser = None  # следующий запрос поднимет браузер заново
+                future.set_exception(e)
+
+    def shot(self, html: str, size: tuple[int, int], timeout: float = 60) -> bytes:
+        from concurrent.futures import Future
+
+        future = Future()
+        self.jobs.put((html, size, future))
+        return future.result(timeout=timeout)
+
+
+_renderer = None
+
+
+def _screenshot(html: str, size: tuple[int, int]) -> bytes:
+    global _renderer
+    if _renderer is None:
+        _renderer = _Renderer()
+    return _renderer.shot(html, size)
 
 
 def render(template: str, context: dict, *, prefix: str, key_parts: tuple, size: tuple[int, int]) -> str | None:

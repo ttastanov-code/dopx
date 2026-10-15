@@ -180,13 +180,12 @@ def _footer(note: str, h: int = 630, w: int = 1200) -> dict:
 
 
 def stat_card(*, prefix: str, accent_name: str, chip: str, number: str, label: str, sub: str = "",
-              footer_note: str = "", image_url: str = "", progress: float = 0.72, key_extra: tuple = ()) -> str:
+              footer_note: str = "", image_url: str = "", progress: float = 0.72, key_extra: tuple = (),
+              icon: str = "") -> str:
     """«Большое число + подпись»: серии, похвастаться, соцсети. image_url — фото игрока или логотип клуба в кольце."""
-    html = _html("cards/html/og_stat.html", {
-        "accent_name": accent_name, "number": number, "label": label, "sub": sub, "image": image_data(image_url, 480),
-        "image_is_photo": "players" in image_url, "progress_pct": round(100 * max(0.05, min(progress, 1.0))),
-        "chip": sentence(chip), "footer_note": footer_note or "Голос трибун · оценки болельщиков",
-    }, prefix=prefix, size=OG, key_parts=(accent_name, chip, number, label, sub, footer_note, image_url, progress, *key_extra))
+    html = _trophy(orient="h", prefix=prefix, accent_name=accent_name, chip=chip, number=number, label=label, sub=sub,
+                   footer_note=footer_note or "Голос трибун · оценки болельщиков", icon=icon, image_url=image_url,
+                   key_parts=key_extra)
     if html:
         return html
     number_size = fit(number, "display", 210, 600, 80)
@@ -333,6 +332,45 @@ RARITY = {
 RARITY_ACCENT = {"bronze": "orange", "silver": "blue", "gold": "amber", "platinum": "blue", "secret": "violet", "legendary": "pink"}
 
 
+# Металл трофея по акценту карточки: (светлый, основной, глубокий, блик), свечение, фон.
+TROPHY_METAL = {
+    "orange": (("#FFE7CC", "#F59E42", "#7A300B", "#FFC98F"), "#F97316", "#120804"),
+    "amber": (("#FFF7D1", "#F3C246", "#87580B", "#FFE594"), "#F5B83A", "#120C03"),
+    "blue": (("#F4FCFF", "#A9DCF7", "#3C6E99", "#DDF4FF"), "#79C8F5", "#04101B"),
+    "green": (("#E6FFF3", "#41D99A", "#0B5A3A", "#B9F6DA"), "#10B981", "#03110B"),
+    "red": (("#FFE4E4", "#F26363", "#781616", "#FFBDBD"), "#EF4444", "#140505"),
+    "violet": (("#F0E6FF", "#A88BF0", "#33206E", "#D3C1FF"), "#8B5CF6", "#090514"),
+    "pink": (("#FFE6F4", "#F062B0", "#741048", "#FFC0E2"), "#EC4899", "#14050D"),
+}
+
+
+def _trophy(*, orient: str, prefix: str, accent_name: str, chip: str, number: str, label: str, sub: str,
+            footer_note: str, icon: str, image_url: str, key_parts: tuple) -> str | None:
+    """Медаль с иконкой или фото + крупная цифра: «похвастаться», серии, соцсети (h) и сторис (v)."""
+    import math
+    import random
+
+    from core import cards_html
+
+    metal, glow, bg = TROPHY_METAL.get(accent_name, TROPHY_METAL["violet"])
+    w, h = (1200, 630) if orient == "h" else (1080, 1920)
+    cx, cy, ms = (300, 335, 400) if orient == "h" else (540, 790, 680)
+    rnd = random.Random(f"{prefix}{label}{number}")
+    sparks = []
+    while len(sparks) < (22 if orient == "h" else 34):
+        x, y = rnd.uniform(20, w - 20), rnd.uniform(20, h - 20)
+        if math.hypot(x - cx, y - cy) < ms * .62:
+            continue
+        sparks.append({"x": round(x), "y": round(y), "r": round(rnd.uniform(2, 5.5), 1), "o": round(rnd.uniform(.3, .95), 2)})
+    image = image_data(image_url, 480) if image_url else ""
+    ctx = {"orient": orient, "m": metal, "glow": glow, "bg": bg, "sparks": sparks, "chip": sentence(chip) if chip else "",
+           "number": number, "label": label, "sub": sub, "footer_note": footer_note,
+           "icon": cards_html.icon_char(icon or "star"), "icon_css": cards_html.icon_font_css(),
+           "image": image, "image_is_photo": "players" in (image_url or "")}
+    return cards_html.render("cards/html/trophy.html", ctx, prefix=prefix, size=(w, h),
+                             key_parts=("trophy", orient, accent_name, chip, number, label, sub, footer_note, icon, image_url, *key_parts))
+
+
 # Металл медали (светлый, основной, глубокий, блик), свечение, фон, сила лучей, розетка, голограмма.
 MEDAL = {
     "bronze": (("#FFE1C2", "#D08A52", "#6E3712", "#F4B987"), "#E08A4A", "#140B07", 10, False, False),
@@ -419,12 +457,9 @@ def badge_card(*, username: str, name: str, description: str, rarity: str, secre
 
 # ---------------- Сторис 1080×1920
 def story(*, accent_name: str, chip: str, number: str, label: str, sub: str = "", footer_note: str = "",
-          image_url: str = "", progress: float = 0.72) -> str:
-    html = _html("cards/html/story.html", {
-        "accent_name": accent_name, "number": number, "label": label, "sub": sub, "image": image_data(image_url, 720),
-        "progress_pct": round(100 * max(0.05, min(progress, 1.0))), "chip": sentence(chip), "footer_note": footer_note,
-        "pad": "150px 80px 0",
-    }, prefix="story", size=(1080, 1920), key_parts=(accent_name, chip, number, label, sub, footer_note, image_url, progress))
+          image_url: str = "", progress: float = 0.72, icon: str = "") -> str:
+    html = _trophy(orient="v", prefix="story", accent_name=accent_name, chip=chip, number=number, label=label, sub=sub,
+                   footer_note=footer_note, icon=icon, image_url=image_url, key_parts=())
     if html:
         return html
     image = image_data(image_url, 480)

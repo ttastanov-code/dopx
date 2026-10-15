@@ -49,10 +49,14 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     else:
         chip, label, sub, accent = "СЕРИЯ ПРОГНОЗОВ", f'{ru_plural(streak_count, "прогноз,прогноза,прогнозов")} подряд', "угадал исход матча", "violet"
     return cards.stat_card(prefix="streak", accent_name=accent, chip=chip, number=str(streak_count), label=label,
-                           sub=sub, footer_note=f"@{username} на DOPX", progress=min(streak_count / 10, 1))
+                           sub=sub, footer_note=f"@{username} на DOPX", progress=min(streak_count / 10, 1),
+                           icon="calendar-check" if streak_type == "evaluation" else "crystal-ball")
 
 
 BRAG_ACCENTS = {"fan_top": "green", "season": "amber", "day_streak": "orange", "predictions": "blue"}
+# Иконка медали по виду карточки (Tabler).
+KIND_ICONS = {"fan_top": "users-group", "season": "ticket", "day_streak": "flame", "predictions": "crystal-ball",
+              "match": "star", "prediction_hit": "crystal-ball", "player_of_round": "star", "referee": "gavel", "drama": "flame"}
 
 
 def build_brag_share_card(*, username: str, kind: str, number_text: str, label_line1: str,
@@ -60,7 +64,7 @@ def build_brag_share_card(*, username: str, kind: str, number_text: str, label_l
     """«Похвастаться»: топ-% болельщиков клуба, уровень сезона, серия дней, сбывшиеся прогнозы."""
     return cards.stat_card(prefix="brag", accent_name=BRAG_ACCENTS.get(kind, "violet"), chip=eyebrow.upper(),
                            number=number_text, label=label_line1, sub=label_line2, footer_note=f"@{username} на DOPX",
-                           image_url=image_url)
+                           image_url=image_url, icon=KIND_ICONS.get(kind, "star"))
 
 
 SOCIAL_ACCENTS = {"player_of_round": "green", "referee": "red", "drama": "orange"}
@@ -70,7 +74,8 @@ def build_social_card(*, kind: str, eyebrow: str, number_text: str, label_line1:
                       image_url: str = "") -> str:
     """Картинка для соцсетей и постов канала (игрок тура, спорный судья, драма тура)."""
     return cards.stat_card(prefix="social", accent_name=SOCIAL_ACCENTS.get(kind, "violet"), chip=eyebrow.upper(),
-                           number=number_text, label=label_line1, sub=label_line2, image_url=image_url)
+                           number=number_text, label=label_line1, sub=label_line2, image_url=image_url,
+                           icon=KIND_ICONS.get(kind, "star"))
 
 
 def build_round_squad_share_card(*, season_year: str, tour: int, player_of_round_name: str,

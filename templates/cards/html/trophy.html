@@ -1,0 +1,99 @@
+<!doctype html>
+{# «Похвастаться» и сторис: медаль с иконкой или фото, крупная цифра металлом, подпись. orient: h — 1200×630, v — 1080×1920. #}
+<html lang="ru"><head><meta charset="utf-8">
+<style>
+{{ font_css|safe }}
+{{ icon_css|safe }}
+:root { --m1: {{ m.0 }}; --m2: {{ m.1 }}; --m3: {{ m.2 }}; --m4: {{ m.3 }}; --glow: {{ glow }}; --bg: {{ bg }}; --mute: rgba(240, 240, 255, .62); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: {{ w }}px; height: {{ h }}px; overflow: hidden; }
+body { position: relative; background: var(--bg); color: #F7F7FB; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+
+.scene { position: absolute; inset: 0; overflow: hidden; }
+.halo, .rays { position: absolute; left: var(--cx); top: var(--cy); transform: translate(-50%, -50%); border-radius: 50%; }
+.halo { width: calc(var(--ms) * 2.6); height: calc(var(--ms) * 2.6);
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--glow) 55%, transparent), color-mix(in oklab, var(--glow) 12%, transparent) 50%, transparent 74%); }
+.rays { width: calc(var(--ms) * 3.2); height: calc(var(--ms) * 3.2);
+  background: repeating-conic-gradient(from 0deg, color-mix(in oklab, var(--glow) 18%, transparent) 0deg 3.2deg, transparent 3.2deg 12deg);
+  -webkit-mask: radial-gradient(closest-side, #000 20%, transparent 72%); mask: radial-gradient(closest-side, #000 20%, transparent 72%); }
+.spark { position: absolute; border-radius: 99px; background: #fff; box-shadow: 0 0 12px 3px color-mix(in oklab, var(--glow) 80%, transparent); }
+.scene::after { content: ""; position: absolute; inset: 0; opacity: .14; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+
+.brand { position: absolute; display: flex; align-items: center; gap: 14px; font: 800 calc(var(--u) * 30px)/1 'Inter Display'; }
+.brand svg { width: calc(var(--u) * 50px); height: calc(var(--u) * 50px); filter: drop-shadow(0 8px 18px rgba(79, 107, 255, .45)); }
+.chip { position: absolute; display: inline-flex; align-items: center; gap: 12px; padding: calc(var(--u) * 12px) calc(var(--u) * 22px) calc(var(--u) * 12px) calc(var(--u) * 18px); border-radius: 999px;
+  font: 600 calc(var(--u) * 20px)/1 'Inter'; color: var(--m1); background: color-mix(in oklab, var(--glow) 14%, rgba(255, 255, 255, .05));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--m2) 50%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.chip i { width: calc(var(--u) * 10px); height: calc(var(--u) * 10px); border-radius: 99px; background: var(--m2); box-shadow: 0 0 14px var(--glow); }
+
+/* Медаль: обод из металла, рифлёная лицевая сторона, иконка-рельеф или фото. */
+.medal { position: absolute; left: var(--cx); top: var(--cy); width: var(--ms); height: var(--ms); transform: translate(-50%, -50%); }
+.rim { position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 210deg, var(--m1), var(--m2) 18%, var(--m3) 32%, var(--m4) 48%, var(--m2) 62%, var(--m3) 78%, var(--m1));
+  box-shadow: 0 40px 90px -20px rgba(0, 0, 0, .75), 0 0 120px color-mix(in oklab, var(--glow) 45%, transparent), inset 0 4px 6px rgba(255, 255, 255, .6), inset 0 -6px 10px rgba(0, 0, 0, .35); }
+.face { position: absolute; inset: 11%; border-radius: 50%; overflow: hidden;
+  background: repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .07) 0 2px, transparent 2px 9px),
+              radial-gradient(circle at 34% 28%, var(--m1), var(--m4) 22%, var(--m2) 55%, var(--m3) 100%);
+  box-shadow: inset 0 10px 24px rgba(0, 0, 0, .35), 0 0 0 6px color-mix(in oklab, var(--m3) 70%, black), 0 0 0 9px color-mix(in oklab, var(--m1) 70%, transparent); }
+.face img.photo { width: 100%; height: 100%; object-fit: cover; }
+.face img.logo { position: absolute; inset: 18%; width: 64%; height: 64%; object-fit: contain; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, .35)); }
+.face::after { content: ""; position: absolute; inset: 0; border-radius: 50%; mix-blend-mode: screen; pointer-events: none;
+  background: radial-gradient(60% 45% at 30% 20%, rgba(255, 255, 255, .6), transparent 60%), linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, .22) 50%, transparent 60%); }
+.icon { position: absolute; inset: 11%; display: grid; place-items: center; font-family: 'tabler'; font-size: calc(var(--ms) * .4); line-height: 1;
+  color: color-mix(in oklab, var(--m3) 82%, black); text-shadow: 0 3px 0 color-mix(in oklab, var(--m1) 85%, transparent), 0 -2px 0 rgba(0, 0, 0, .35), 0 10px 22px rgba(0, 0, 0, .25); }
+
+.num { font-family: 'Inter Display'; font-weight: 800; letter-spacing: -.04em; line-height: .86; white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #fff 22%, var(--m1) 52%, var(--m2) 100%); -webkit-background-clip: text; color: transparent;
+  filter: drop-shadow(0 18px 40px color-mix(in oklab, var(--glow) 40%, transparent)); }
+.label { font: 800 calc(var(--u) * 46px)/1.08 'Inter Display'; letter-spacing: -.02em; text-wrap: balance; }
+.sub { font: 500 calc(var(--u) * 24px)/1.35 'Inter'; color: var(--mute); text-wrap: balance; }
+.foot { position: absolute; display: flex; justify-content: space-between; align-items: center; font: 600 calc(var(--u) * 21px)/1 'Inter'; color: var(--mute); }
+.foot b { font: 700 calc(var(--u) * 22px)/1 'Inter Display'; color: #fff; }
+
+/* Горизонтальная: медаль слева, текст справа. */
+body.h { --u: 1; --ms: 400px; --cx: 300px; --cy: 335px; }
+body.h .brand { left: 60px; top: 50px; } body.h .chip { right: 60px; top: 46px; }
+body.h .text { position: absolute; left: 570px; right: 60px; top: 150px; bottom: 110px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+body.h .num { font-size: 168px; }
+body.h .foot { left: 60px; right: 60px; bottom: 44px; }
+/* Вертикальная (сторис): всё по центру, отступы под интерфейс Instagram. */
+body.v { --u: 1.5; --ms: 680px; --cx: 540px; --cy: 790px; }
+body.v .brand { left: 80px; top: 150px; } body.v .chip { right: 80px; top: 146px; }
+body.v .text { position: absolute; left: 80px; right: 80px; top: 1190px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px; }
+body.v .num { font-size: 280px; }
+body.v .foot { left: 80px; right: 80px; bottom: 170px; }
+</style></head>
+<body class="{{ orient }}">
+<div class="scene">
+  <div class="halo"></div><div class="rays"></div>
+  {% for s in sparks %}<span class="spark" style="left:{{ s.x }}px;top:{{ s.y }}px;width:{{ s.r }}px;height:{{ s.r }}px;opacity:{{ s.o }}"></span>{% endfor %}
+</div>
+<div class="brand">
+  <svg viewBox="0 0 48 48"><defs><linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4F6BFF"/><stop offset="1" stop-color="#9333EA"/></linearGradient></defs><rect width="48" height="48" rx="13" fill="url(#brand)"/><g transform="translate(4.8 4.8) scale(0.8)"><circle cx="24" cy="24" r="17" fill="none" stroke="#fff" stroke-width="3" opacity=".35"/><path d="M11.98 36.02 A17 17 0 1 1 37.02 13.07" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/><circle cx="37.02" cy="13.07" r="5.2" fill="url(#brand)" stroke="#fff" stroke-width="3.2"/><path d="M24 17.5 L30.2 22 L27.8 29.3 L20.2 29.3 L17.8 22 Z" fill="#fff"/></g></svg>
+  DOPX
+</div>
+{% if chip %}<span class="chip"><i></i>{{ chip }}</span>{% endif %}
+<div class="medal">
+  <div class="rim"></div>
+  <div class="face">{% if image %}<img class="{% if image_is_photo %}photo{% else %}logo{% endif %}" src="{{ image }}">{% endif %}</div>
+  {% if not image %}<div class="icon">{{ icon }}</div>{% endif %}
+</div>
+<div class="text">
+  <div class="num" data-fit="1" data-min="80">{{ number }}</div>
+  <div class="label" data-fit="2" data-min="28">{{ label }}</div>
+  {% if sub %}<div class="sub" data-fit="2" data-min="18">{{ sub }}</div>{% endif %}
+</div>
+<div class="foot"><span>{{ footer_note }}</span><b>dopx.kz</b></div>
+<script>
+window.__fit = () => {
+  document.querySelectorAll('[data-fit]').forEach((el) => {
+    const max = +el.dataset.fit, min = +(el.dataset.min || 18);
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    const tooWide = () => el.scrollWidth > el.parentElement.clientWidth + 1;
+    const lines = () => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+    while (size > min && (lines() > max || tooWide())) { size -= 2; el.style.fontSize = size + 'px'; }
+  });
+};
+</script>
+</body></html>
