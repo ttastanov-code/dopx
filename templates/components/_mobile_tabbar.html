@@ -1,3 +1,4 @@
+{% load engagement_extras %}
 {% comment %}
 Нижняя панель вкладок (телефон и планшет, < lg). Стили — css/ui.css (dx-tabbar).
 Контекст — core.context_processors.mobile_tabbar.
@@ -38,7 +39,7 @@
     <button type="button" data-drawer-open="sheet-profile" aria-expanded="false" aria-controls="sheet-profile"
             class="dx-tabbar__item{% if tabbar_section == 'engagement' or tabbar_section == 'notifications' or tabbar_section == 'users' and tabbar_url_name != 'leaderboard' and tabbar_url_name != 'city_leaderboard' and tabbar_url_name != 'player_leaderboard' %} is-active{% endif %}">
         {% if user.is_authenticated %}
-        <span class="dx-tabbar__avatar">{% if user.avatar %}<img src="{{ user.avatar.url }}" alt="">{% else %}{{ user.username|first|upper }}{% endif %}</span><span>Профиль</span>
+        <span class="dx-tabbar__avatar {{ user|frame_class }}">{% if user.avatar %}<img src="{{ user.avatar.url }}" alt="">{% else %}{{ user.username|first|upper }}{% endif %}</span><span>Профиль</span>
         {% else %}
         <i class="ti ti-user-circle"></i><span>Войти</span>
         {% endif %}

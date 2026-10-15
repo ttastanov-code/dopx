@@ -17,7 +17,7 @@
         <span class="dx-fanzone__crown"><i class="ti ti-crown"></i></span>
         <span class="dx-fanzone__leader-body">
             <small>Главный фанат месяца</small>
-            <b class="{{ fan_zone.leader.user|name_class }}">{{ fan_zone.leader.user.username }}</b>
+            <b class="{{ fan_zone.leader.user|name_class }}">{{ fan_zone.leader.user.username }} {% user_title fan_zone.leader.user "icon" %}</b>
         </span>
         <span class="dx-fanzone__pts">{{ fan_zone.leader.points }}<small>очк.</small></span>
     </a>
@@ -27,7 +27,7 @@
         {% for row in fan_zone.top|slice:"1:" %}
         <li class="dx-rank__row{% if row.user == user %} is-me{% endif %}">
             <span class="dx-rank__place">{{ row.place }}</span>
-            <a href="{% url 'users:public_profile' row.user.username %}" class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }}</a>
+            <a href="{% url 'users:public_profile' row.user.username %}" class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }} {% user_title row.user "icon" %}</a>
             <span class="dx-rank__value">{{ row.points }}</span>
         </li>
         {% endfor %}

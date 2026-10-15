@@ -3077,13 +3077,18 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 
 /* Рамки аватара по медалям (золото — из абонемента выше). */
 .dx-frame--platinum { --dx-frame: #8fd0f5; box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 4px var(--dx-frame), 0 0 16px 3px rgb(121 200 245 / .55); }
-/* Легендарная: переливающееся голографическое кольцо (фон на рамке-бордюре, фото внутри его не перекрывает). */
-.dx-frame--legendary { border: 3px solid transparent; box-shadow: 0 0 16px 3px rgb(199 125 255 / .45);
-  background: conic-gradient(from var(--dx-a, 0deg), #ff7ad9, #ffd36e, #7cffb2, #6ec8ff, #b18cff, #ff7ad9) border-box;
-  animation: dx-holo-spin 6s linear infinite; }
+/* Легендарная: переливающееся кольцо отдельным слоем по краю — не зависит от фона и фото аватара. */
+.dx-frame--legendary { position: relative; box-shadow: 0 0 0 2px var(--color-base-100), 0 0 16px 3px rgb(199 125 255 / .45); }
+.dx-frame--legendary::after {
+  content: ""; position: absolute; inset: 0; z-index: 2; border-radius: 50%; padding: 3px; pointer-events: none;
+  background: conic-gradient(from var(--dx-a, 0deg), #ff7ad9, #ffd36e, #7cffb2, #6ec8ff, #b18cff, #ff7ad9);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: dx-holo-spin 6s linear infinite;
+}
 @property --dx-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @keyframes dx-holo-spin { to { --dx-a: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .dx-frame--legendary { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dx-frame--legendary::after { animation: none; } }
 
 /* Витрина в профиле: три медали с подписью. */
 .dx-showcase { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-top: 1rem; }
@@ -3155,3 +3160,8 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   .dx-tabbar__item--center:not(.is-active) > span:last-child { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
   .dx-tabbar__item--center.is-active > span:last-child { color: var(--color-primary); font-weight: 800; }
 }
+/* Рамка на маленьком аватаре нижнего меню — тоньше, чтобы не спорила с иконками. */
+.dx-tabbar__avatar.dx-frame { box-shadow: 0 0 0 1.5px var(--color-base-100), 0 0 0 3px var(--dx-frame); }
+.dx-tabbar__avatar.dx-frame--legendary { box-shadow: 0 0 8px 1px rgb(199 125 255 / .45); }
+.dx-tabbar__avatar.dx-frame--legendary::after { padding: 2px; }
+.dx-tabbar__item:not(.is-active) .dx-tabbar__avatar.dx-frame { opacity: 1; }
