@@ -333,3 +333,30 @@ div:has(> .wz-list:not(:has(> *))) > .wz-list-title { display: none; }
 /* Без обводки: капсулу выделяет только тон. Крайние деления совпадают с краями — их не рисуем. */
 .wizard-slider, .wz-player__sliders .wizard-slider, :root[data-theme="dark"] .wizard-slider { box-shadow: none; }
 .wz-ticks i:first-child, .wz-ticks i:last-child { display: none; }
+
+/* Компактнее: капсула 2.6rem, плотный ритм, тоньше ручка и деления. */
+.wizard-slider, .wz-player__sliders .wizard-slider { height: 2.6rem; border-radius: .85rem; }
+.wizard-slider::-moz-range-track { height: 2.6rem; }
+.wz-slider-card > div:first-child { height: 2.6rem; padding: 0 .9rem 0 .95rem; transform: translateY(-.1rem); }
+.wz-ticks { height: 2.6rem; }
+.wz-ticks i { bottom: .34rem; width: 2.5px; height: 2.5px; margin-left: -1.25px; }
+.wz-slider-card, .wz-player__sliders .wz-slider-card, .wz-player__sliders .wz-slider-card:first-of-type { margin-top: .35rem; }
+.space-y-3\.5 > .wz-slider-card { margin-top: .35rem !important; }
+.wz-slider-card > div:first-child label { font-size: .84rem !important; }
+.wz-slider-card__value { font-size: 1rem; min-width: 1.3rem; text-align: right; }
+.wz-slider-card--untouched .wz-slider-card__value { font-size: .9rem; }
+.wizard-slider::-webkit-slider-thumb { width: 5px; height: 1.5rem; }
+.wizard-slider::-moz-range-thumb { width: 5px; height: 1.5rem; }
+.wizard-slider:active::-webkit-slider-thumb, .wz-slider-card.is-dragging .wizard-slider::-webkit-slider-thumb { height: 1.8rem; }
+/* Край заливки чуть светится — значение читается боковым зрением. */
+.wizard-slider {
+    background:
+      radial-gradient(1.6rem 70% at var(--wz-fill, 50%) 50%, color-mix(in oklab, var(--color-primary) 22%, transparent), transparent 70%),
+      linear-gradient(to right,
+        color-mix(in oklab, var(--color-primary) 8%, var(--color-base-100)) 0,
+        color-mix(in oklab, var(--color-primary) 30%, var(--color-base-100)) var(--wz-fill, 50%),
+        color-mix(in oklab, var(--color-base-content) 4.5%, var(--color-base-100)) var(--wz-fill, 50%));
+}
+.wz-slider-card--untouched .wizard-slider { background: color-mix(in oklab, var(--color-base-content) 4.5%, var(--color-base-100)); }
+/* Подписи 0 / 50 / 100 (судья) — мельче. */
+.wz-slider-card > input[type="hidden"] + div { font-size: 9px !important; opacity: .8; }

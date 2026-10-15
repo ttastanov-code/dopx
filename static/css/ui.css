@@ -3034,6 +3034,13 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
     -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
   }
   .dx-glass-nav::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  /* Safari заливает зону под часами цветом фона страницы; шапка того же цвета и почти непрозрачная — шва нет (как у ea.com).
+     Под ней лишь лёгкая матовость, кромка снизу остаётся. */
+  .dx-glass-nav::before, .dx-glass-nav.dx-nav--on-dark::before {
+    background-color: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+    background-image: none;
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  }
   /* Окно уведомлений внутри шапки — шторка снизу; размытие у родителя сдвинуло бы её, на время открытия снимаем. */
   html.nf-sheet-open .navbar.dx-glass-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
