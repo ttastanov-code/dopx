@@ -156,7 +156,7 @@
             <a href="{% url 'users:profile' %}" class="dx-drawer__me">
                 {% with fc=user|frame_class %}{% if user.avatar %}{% include 'components/_avatar.html' with photo_url=user.avatar.url name=user.username size_classes='w-12 h-12 text-lg' ring_classes=fc %}{% else %}{% include 'components/_avatar.html' with name=user.username size_classes='w-12 h-12 text-lg' ring_classes=fc %}{% endif %}{% endwith %}
                 <span class="dx-drawer__me-body">
-                    <span class="dx-drawer__me-name {{ user|name_class }}">{{ user.username }}</span>
+                    <span class="dx-drawer__me-name {{ user|name_class }}">{{ user.username }} {% user_title user "icon" %}</span>
                     <span class="dx-drawer__me-meta">Уровень {{ user.xp.level|default:1 }}{% if user.evaluation_streak %} · серия {{ user.evaluation_streak }}{% endif %}</span>
                     <span class="dx-drawer__xp"><span style="width: {{ user.xp.progress_percent|default:0 }}%"></span></span>
                 </span>
