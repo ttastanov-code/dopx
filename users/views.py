@@ -408,7 +408,10 @@ class BadgePinView(LoginRequiredMixin, View):
     def post(self, request, code):
         earned = UserBadge.objects.filter(user=request.user, badge_type=code).exists()
         definition = BADGE_CATALOG.get(code)
-        pinned = [c for c in (request.user.showcase_badges or []) if c in BADGE_CATALOG]
+        # Только то, что сейчас есть у пользователя: снятые пересчётом медали из витрины выпадают.
+        have = set(UserBadge.objects.filter(user=request.user, is_stale=False).values_list('badge_type', flat=True))
+        pinned = [c for c in (request.user.showcase_badges or []) if c in have and c in BADGE_CATALOG
+                  and not BADGE_CATALOG[c].is_secret]
         if code in pinned:
             pinned.remove(code)
         elif not earned or definition is None or definition.is_secret:

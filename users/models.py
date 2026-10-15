@@ -289,6 +289,8 @@ class UserBadge(BaseModel):
         help_text=_("Только для статусных достижений — показатель упал ниже порога после получения бейджа."),
     )
     stale_since = models.DateTimeField(_("Утратил актуальность с"), null=True, blank=True)
+    # Выдано вручную (команда grant_badges, админка): пересчёт прогресса и проверка статуса его не снимают.
+    granted_manually = models.BooleanField(_("Выдано вручную"), default=False)
 
     class Meta:
         verbose_name = _("Достижение")

@@ -583,7 +583,7 @@ def revalidate_status_badges(user) -> dict[str, list[str]]:
     """Ставит/снимает is_stale у уже выданных статусных бейджей. Новые не выдаёт."""
     existing = {
         b.badge_type: b
-        for b in UserBadge.objects.filter(user=user, badge_type__in=STATUS_BADGE_TYPES)
+        for b in UserBadge.objects.filter(user=user, badge_type__in=STATUS_BADGE_TYPES, granted_manually=False)
     }
     now_stale: list[str] = []
     reactivated: list[str] = []

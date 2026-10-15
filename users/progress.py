@@ -101,11 +101,9 @@ def recompute_user_progress(user) -> dict:
 
         # 4. Достижения: снимаем выведенные из данных и выдаём заново по фактам;
         #    серийные — по пику серии, а не по текущему значению. Дата получения сохраняется.
-        old_badges = {
-            b.badge_type: b.awarded_at
-            for b in UserBadge.objects.filter(user=user).exclude(badge_type__in=PRESERVED_BADGES)
-        }
-        UserBadge.objects.filter(user=user).exclude(badge_type__in=PRESERVED_BADGES).delete()
+        derived = UserBadge.objects.filter(user=user, granted_manually=False).exclude(badge_type__in=PRESERVED_BADGES)
+        old_badges = {b.badge_type: b.awarded_at for b in derived}
+        derived.delete()
 
     from users.services import check_and_award_badges, revalidate_status_badges
 
