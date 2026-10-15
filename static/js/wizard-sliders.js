@@ -10,7 +10,32 @@
         const max = parseFloat(el.max || '100');
         const val = parseFloat(el.value);
         const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
-        el.style.setProperty('--wz-fill', pct + '%');
+        // Поправка на ширину ручки (6px): заливка кончается ровно под ней.
+        el.style.setProperty('--wz-fill', `calc(3px + (100% - 6px) * ${pct / 100})`);
+        const ticks = el._wzTicks;
+        if (ticks) ticks.forEach((t) => t.classList.toggle('is-on', parseFloat(t.dataset.v) <= val));
+    }
+
+    // Деления шкалы: не больше 11 точек (0–100 с шагом 5 — каждые 10).
+    function addTicks(el) {
+        const card = el.closest('.wz-slider-card');
+        if (!card || el._wzTicks) return;
+        const min = parseFloat(el.min || '0'), max = parseFloat(el.max || '100'), step = parseFloat(el.step || '1');
+        let every = step;
+        while ((max - min) / every > 10) every += step;
+        const box = document.createElement('div');
+        box.className = 'wz-ticks';
+        box.setAttribute('aria-hidden', 'true');
+        const list = [];
+        for (let v = min; v <= max + 1e-9; v += every) {
+            const i = document.createElement('i');
+            i.dataset.v = v;
+            i.style.setProperty('--k', (v - min) / (max - min));
+            box.appendChild(i);
+            list.push(i);
+        }
+        el.insertAdjacentElement('beforebegin', box);
+        el._wzTicks = list;
     }
 
     // Заметка шага по умолчанию; шаблоны переопределяют её через data-wz-untouched-hint.
@@ -44,6 +69,11 @@
             hidden.value = '1';
             card.classList.remove('wz-slider-card--untouched');
             if (value) {
+                if (value.textContent !== el.value) {
+                    value.classList.add('is-bump');
+                    clearTimeout(value._bump);
+                    value._bump = setTimeout(() => value.classList.remove('is-bump'), 140);
+                }
                 value.textContent = el.value;
             }
         });
@@ -64,6 +94,7 @@
 
     function initAll(root) {
         (root || document).querySelectorAll('.wizard-slider').forEach(function (el) {
+            addTicks(el);
             updateFill(el);
             ensureTouchedTracking(el);
         });
@@ -145,6 +176,8 @@
     document.addEventListener('pointerdown', function (e) {
         if (e.pointerType !== 'touch' || !e.target.classList || !e.target.classList.contains('wizard-slider')) return;
         drag = { el: e.target, x: e.clientX, y: e.clientY, moved: false };
+        const card = e.target.closest('.wz-slider-card');
+        if (card) card.classList.add('is-dragging');
     }, { passive: true });
     document.addEventListener('pointermove', function (e) {
         if (!drag) return;
@@ -154,9 +187,13 @@
     document.addEventListener('pointerup', function (e) {
         if (!drag) return;
         if (!drag.moved && Math.abs(e.clientY - drag.y) < 8) setFromX(drag.el, e.clientX);
-        drag = null;
+        endDrag();
     });
-    document.addEventListener('pointercancel', function () { drag = null; });
+    document.addEventListener('pointercancel', endDrag);
+    function endDrag() {
+        if (drag) { const card = drag.el.closest('.wz-slider-card'); if (card) card.classList.remove('is-dragging'); }
+        drag = null;
+    }
 
     document.addEventListener('DOMContentLoaded', function () { initAll(); });
     // Слайдеры в свёрнутых карточках появляются позже — инициализируем повторно.
