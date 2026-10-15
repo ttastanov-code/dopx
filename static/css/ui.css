@@ -3172,3 +3172,4 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-share__alt.is-ready { animation: dx-ready-pulse 1.2s ease-out 2; }
 @keyframes dx-ready-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 55%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
 @media (prefers-reduced-motion: reduce) { .dx-share__alt.is-ready { animation: none; outline: 2px solid var(--color-primary); } }
+.dx-showcase__edit { display: inline-block; margin-top: .5rem; font-size: .75rem; font-weight: 600; color: var(--color-primary); }

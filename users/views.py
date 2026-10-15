@@ -341,6 +341,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'stats': stats,
             'recent_evaluations': recent_evaluations,
             'badges': badges,
+            'showcase': prestige(user.pk)['showcase'],
             'xp': xp,
             'active_sessions': active_sessions,
             'page_title': f'Профиль — {user.username}'
