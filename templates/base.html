@@ -70,6 +70,8 @@
     <script>
         const savedTheme = localStorage.getItem('theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
+        // Свёрнутая нижняя панель — до отрисовки, без мигания (_mobile_tabbar.html).
+        try { if (localStorage.getItem('dx-tabbar') === 'min') document.documentElement.classList.add('dx-tabbar-min'); } catch (e) {}
         // Восстановление прокрутки берём под свой контроль до первой отрисовки (scroll-restore.js).
         if ('scrollRestoration' in history) {
             history.scrollRestoration = 'manual';

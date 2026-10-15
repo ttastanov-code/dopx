@@ -2,7 +2,7 @@
 Нижняя панель вкладок (телефон и планшет, < lg). Стили — css/ui.css (dx-tabbar).
 Контекст — core.context_processors.mobile_tabbar.
 {% endcomment %}
-<nav class="dx-tabbar lg:hidden" aria-label="Основные разделы">
+<nav class="dx-tabbar lg:hidden" id="dx-tabbar" aria-label="Основные разделы">
     <a href="{% url 'core:home' %}" class="dx-tabbar__item{% if tabbar_section == 'core' and tabbar_url_name == 'home' %} is-active{% endif %}"
        {% if tabbar_section == 'core' and tabbar_url_name == 'home' %}aria-current="page"{% endif %}>
         <i class="ti ti-home"></i><span>Главная</span>
@@ -44,3 +44,27 @@
         {% endif %}
     </button>
 </nav>
+{# Кнопка справа: сворачивает панель в себя и разворачивает обратно; выбор запоминается. #}
+<button type="button" class="dx-tabbar-toggle" aria-controls="dx-tabbar" aria-expanded="true" aria-label="Свернуть меню">
+    <i class="ti ti-chevron-down dx-tabbar-toggle__close" aria-hidden="true"></i>
+    <i class="ti ti-layout-grid dx-tabbar-toggle__open" aria-hidden="true"></i>
+    {% if tabbar_pending_count %}<span class="dx-tabbar-toggle__dot" aria-hidden="true"></span>{% endif %}
+</button>
+<script>
+(() => {
+    const btn = document.currentScript.previousElementSibling;
+    const root = document.documentElement;
+    const sync = () => {
+        const min = root.classList.contains('dx-tabbar-min');
+        btn.setAttribute('aria-expanded', String(!min));
+        btn.setAttribute('aria-label', min ? 'Открыть меню' : 'Свернуть меню');
+    };
+    btn.addEventListener('click', () => {
+        root.classList.toggle('dx-tabbar-min');
+        try { localStorage.setItem('dx-tabbar', root.classList.contains('dx-tabbar-min') ? 'min' : 'full'); } catch (e) {}
+        if (navigator.vibrate) navigator.vibrate(8);
+        sync();
+    });
+    sync();
+})();
+</script>

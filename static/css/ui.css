@@ -1238,7 +1238,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 
 /* Нижняя панель и липкая кнопка — только на телефоне (ui.css грузится после Tailwind и перебивал md:hidden). */
 @media (min-width: 768px) {
-    .dx-tabbar, .dx-sticky-cta { display: none !important; }
+    .dx-tabbar, .dx-sticky-cta, .dx-tabbar-toggle { display: none !important; }
 }
 
 /* ---------- Настроение болельщиков (страница команды) ---------- */
@@ -2879,10 +2879,12 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
     radial-gradient(120% 90% at 100% 100%, var(--lg-sheen2), transparent 52%);
 }
 /* Больше текста — чуть плотнее подложка, чтобы читалось; стекло по-прежнему прозрачное. */
-:is(.dx-drawer__panel, .nf-pop) { --lg-tint: 66%; }
-:is(.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 74%; }
-:root[data-theme="dark"] :is(.dx-drawer__panel, .nf-pop) { --lg-tint: 58%; }
-:root[data-theme="dark"] :is(.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 62%; }
+/* Шторки и меню — стекло плотнее: под ними только мягкий цвет, контент страницы не мешает читать. */
+:is(.dx-drawer__panel, .nf-pop, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) {
+  --lg-tint: 86%;
+  -webkit-backdrop-filter: blur(34px) saturate(180%); backdrop-filter: blur(34px) saturate(180%);
+}
+:root[data-theme="dark"] :is(.dx-drawer__panel, .nf-pop, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 82%; }
 .dx-tabbar { --lg-tint: 46%; }
 .dx-sticky-cta { --lg-tint: 62%; }
 :root[data-theme="dark"] :is(.dx-tabbar, .dx-sticky-cta) { --lg-tint: 44%; }
@@ -2935,3 +2937,59 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 }
 /* Мелкий текст в липкой кнопке — темнее, чтобы читался и над тёмным фоном. */
 .dx-sticky-cta .dx-sticky-cta__meta { color: color-mix(in oklab, var(--color-base-content) 84%, transparent); }
+
+/* ---------- Нижняя панель: сворачивается в стеклянную кнопку справа ---------- */
+.dx-tabbar-toggle { display: none; }
+@media (max-width: 767px) {
+  .dx-tabbar {
+    left: auto; right: calc(.75rem + 3.5rem + .5rem); margin: 0; max-width: none;
+    width: calc(100% - 1.5rem - 3.5rem - .5rem);
+    transition: width .46s cubic-bezier(.32, .72, 0, 1), right .46s cubic-bezier(.32, .72, 0, 1), opacity .2s ease;
+  }
+  .dx-tabbar > * { transition: opacity .2s ease .16s; }
+  /* Свёрнута: капсула сжимается вправо до размера кнопки и растворяется в ней; содержимое гаснет первым. */
+  .dx-tabbar-min .dx-tabbar {
+    right: .75rem; width: 3.5rem; opacity: 0; pointer-events: none;
+    transition: width .42s cubic-bezier(.32, .72, 0, 1), right .42s cubic-bezier(.32, .72, 0, 1), opacity .16s ease .28s;
+  }
+  .dx-tabbar-min .dx-tabbar > * { opacity: 0; transition: opacity .1s ease; }
+
+  .dx-tabbar-toggle {
+    position: fixed; right: .75rem; bottom: calc(.55rem + env(safe-area-inset-bottom, 0px)); z-index: 46;
+    display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 999px;
+    color: var(--color-base-content); font-size: 1.45rem; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; isolation: isolate;
+    background: color-mix(in oklab, var(--color-base-100) 46%, transparent);
+    -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+    box-shadow:
+      inset 2px 2px 1px -1px var(--lg-spec1), inset -2px -2px 1px -1px var(--lg-spec2),
+      inset 0 0 0 1px var(--lg-rim), inset 0 0 18px 1px var(--lg-glow),
+      0 0 0 1px var(--lg-ring), var(--lg-drop);
+    transition: transform .25s cubic-bezier(.16, 1, .3, 1);
+  }
+  .dx-tabbar-toggle::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(120% 110% at 15% 0%, var(--lg-sheen1), transparent 55%);
+  }
+  .dx-tabbar-toggle:active { transform: scale(.9); }
+  .dx-tabbar-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+  .dx-tabbar-toggle i { grid-area: 1 / 1; line-height: 1; transition: opacity .25s ease, transform .4s cubic-bezier(.32, .72, 0, 1); }
+  .dx-tabbar-toggle__open { opacity: 0; transform: rotate(-90deg) scale(.6); }
+  .dx-tabbar-min .dx-tabbar-toggle__close { opacity: 0; transform: rotate(90deg) scale(.6); }
+  .dx-tabbar-min .dx-tabbar-toggle__open { opacity: 1; transform: none; }
+  /* Точка — есть матчи, ждущие оценки (видна, пока меню свёрнуто). */
+  .dx-tabbar-toggle__dot {
+    position: absolute; top: .55rem; right: .6rem; width: .6rem; height: .6rem; border-radius: 999px;
+    background: var(--color-error); box-shadow: 0 0 0 2px var(--color-base-100);
+    opacity: 0; transform: scale(.4); transition: opacity .2s ease, transform .3s cubic-bezier(.16, 1, .3, 1);
+  }
+  .dx-tabbar-min .dx-tabbar-toggle__dot { opacity: 1; transform: none; }
+
+  /* Липкая кнопка матча: при свёрнутом меню опускается вниз, оставляя место кнопке справа. */
+  body.has-tabbar .dx-sticky-cta { transition: bottom .4s cubic-bezier(.32, .72, 0, 1), right .4s cubic-bezier(.32, .72, 0, 1); }
+  .dx-tabbar-min body.has-tabbar .dx-sticky-cta { bottom: calc(.55rem + env(safe-area-inset-bottom, 0px)); right: calc(.75rem + 3.5rem + .5rem); }
+  .dx-tabbar-min body.has-tabbar { padding-bottom: calc(4.6rem + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .dx-tabbar, .dx-tabbar > *, .dx-tabbar-toggle i, body.has-tabbar .dx-sticky-cta { transition: none; }
+}
