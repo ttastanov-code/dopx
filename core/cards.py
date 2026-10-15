@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 FONT_DIR = Path(settings.BASE_DIR) / "static" / "fonts" / "cards"
 FONTS = {"display": "InterDisplay-ExtraBold.ttf", "display700": "InterDisplay-Bold.ttf",
          "bold": "Inter-ExtraBold.ttf", "semibold": "Inter-SemiBold.ttf", "regular": "Inter-Regular.ttf"}
-DESIGN_VERSION = "v3"
+DESIGN_VERSION = "v4"
 
 # Акцент карточки: основной цвет и второй для свечения.
 ACCENTS = {
@@ -140,8 +140,17 @@ def render(template: str, context: dict, *, prefix: str, key_parts: tuple, size:
     accent, accent2 = ACCENTS.get(context.get("accent_name", "violet"), ACCENTS["violet"])
     svg = render_to_string(template, {"w": size[0], "h": size[1], "accent": accent, "accent2": accent2, **context})
     png = resvg_py.svg_to_bytes(svg_string=svg, font_dirs=[str(FONT_DIR)], skip_system_fonts=True,
-                                font_family="Inter", width=size[0], height=size[1])
+                                font_family="Inter", width=size[0] * 2, height=size[1] * 2)
     return default_storage.save(path, ContentFile(bytes(png)))
+
+
+def _html(template: str, context: dict, *, prefix: str, size: tuple[int, int], key_parts: tuple) -> str | None:
+    """Новая вёрстка (HTML → Chromium); None — Chromium недоступен, рисуем SVG."""
+    from core import cards_html
+
+    accent, accent2 = ACCENTS.get(context.get("accent_name", "violet"), ACCENTS["violet"])
+    return cards_html.render(template, {"accent": accent, "accent2": accent2, **context},
+                             prefix=prefix, key_parts=key_parts, size=size)
 
 
 # ---------------- Общие куски OG-карточек 1200×630
@@ -173,6 +182,13 @@ def _footer(note: str, h: int = 630, w: int = 1200) -> dict:
 def stat_card(*, prefix: str, accent_name: str, chip: str, number: str, label: str, sub: str = "",
               footer_note: str = "", image_url: str = "", progress: float = 0.72, key_extra: tuple = ()) -> str:
     """«Большое число + подпись»: серии, похвастаться, соцсети. image_url — фото игрока или логотип клуба в кольце."""
+    html = _html("cards/html/og_stat.html", {
+        "accent_name": accent_name, "number": number, "label": label, "sub": sub, "image": image_data(image_url, 480),
+        "image_is_photo": "players" in image_url, "progress_pct": round(100 * max(0.05, min(progress, 1.0))),
+        "chip": sentence(chip), "footer_note": footer_note or "Голос трибун · оценки болельщиков",
+    }, prefix=prefix, size=OG, key_parts=(accent_name, chip, number, label, sub, footer_note, image_url, progress, *key_extra))
+    if html:
+        return html
     number_size = fit(number, "display", 210, 600, 80)
     label_lines = wrap(label, 42, 580, "display700", 2)
     sub_lines = wrap(sub, 25, 580, "semibold", 2) if sub else []
@@ -200,6 +216,15 @@ def _team(name: str, logo_url: str, cx: int, cy: int, r: int, name_size: int = 2
 def match_card(*, home: str, away: str, score: str, home_logo: str = "", away_logo: str = "",
                hero_name: str = "", hero_score: str = "", hero_photo: str = "") -> str:
     """Превью матча: логотипы, счёт, лучший игрок по оценкам."""
+    hs, _, as_ = score.partition(":")
+    html = _html("cards/html/og_match.html", {
+        "accent_name": "violet", "home": home, "away": away, "home_score": hs.strip(), "away_score": as_.strip(),
+        "home_logo": image_data(home_logo), "away_logo": image_data(away_logo), "home_initials": initials(home), "away_initials": initials(away),
+        "hero_name": hero_name, "hero_score": hero_score, "hero_photo": image_data(hero_photo), "hero_initials": initials(hero_name),
+        "chip": "Итог матча", "footer_note": "Оценки игроков от болельщиков",
+    }, prefix="match", size=OG, key_parts=(home, away, score, home_logo, away_logo, hero_name, hero_score, hero_photo))
+    if html:
+        return html
     hero = None
     if hero_name:
         photo = image_data(hero_photo)
@@ -218,6 +243,18 @@ def dna_card(*, home: str, away: str, score: str, headline: str, drama_level: st
     """ДНК матча: главный факт, шкала драмы, герой и антигерой, настроение трибун."""
     accent = {"high": "orange", "medium": "amber", "low": "blue"}.get(drama_level, "violet")
     label = {"high": "Высокая драма", "medium": "Средняя драма", "low": "Спокойный матч"}.get(drama_level, "Драма")
+    html = _html("cards/html/og_dna.html", {
+        "accent_name": accent, "home": home, "away": away, "score": score.replace(":", " : "),
+        "home_logo": image_data(home_logo), "away_logo": image_data(away_logo),
+        "home_initials": initials(home), "away_initials": initials(away), "headline": headline,
+        "drama_label": label, "drama_value": round(drama_index), "drama_pct": max(2, min(round(drama_index), 100)),
+        "facts": [t for t in (mood, consensus) if t][:1],
+        "people": [{"name": n, "score": v, "label": t, "color": c} for n, v, t, c in
+                   ((*hero, "Герой матча", "#34D399"), (*antihero, "Антигерой", "#F87171")) if n],
+        "chip": "ДНК матча", "footer_note": "Как трибуны увидели матч",
+    }, prefix="dna", size=OG, key_parts=(home, away, score, headline, drama_level, drama_index, hero, antihero, mood, consensus, home_logo, away_logo))
+    if html:
+        return html
     score_line = f"{home}  {score}  {away}"
     hl_size = fit(headline, "display", 46, 1280, 30) if headline else 40
     hl_lines = wrap(headline, hl_size, 636, "display", 2) if headline else []
@@ -243,6 +280,13 @@ def dna_card(*, home: str, away: str, score: str, headline: str, drama_level: st
 
 def round_card(*, season: str, tour: int, player: str, score: str, drama: str = "", photo_url: str = "") -> str:
     """Лучшие тура: игрок тура, оценка, самый драматичный матч."""
+    html = _html("cards/html/og_round.html", {
+        "accent_name": "green", "player": player, "score": score, "drama": drama, "tour": tour,
+        "photo": image_data(photo_url, 480), "initials": initials(player),
+        "chip": sentence(f"ЛУЧШИЕ ТУРА · {season}"), "footer_note": "Сборная тура по оценкам болельщиков",
+    }, prefix="round", size=OG, key_parts=(season, tour, player, score, drama, photo_url))
+    if html:
+        return html
     size = fit(player, "display", 76, 1150, 44)
     lines = wrap(player, size, 640, "display", 2)
     names = [{"text": t, "y": 196 + int(size * 1.02) + i * (size + 6)} for i, t in enumerate(lines)]
@@ -256,6 +300,13 @@ def round_card(*, season: str, tour: int, player: str, score: str, drama: str = 
 def recap_card(*, player: str, team: str, season: str, matches: int, rating: str, goals: int,
                photo_url: str = "", team_logo: str = "") -> str:
     """Итоги сезона игрока: фото, клуб, три цифры."""
+    html = _html("cards/html/og_recap.html", {
+        "accent_name": "blue", "player": player, "team": team, "season": season, "matches": matches, "rating": rating, "goals": goals,
+        "photo": image_data(photo_url, 480), "team_logo": image_data(team_logo), "initials": initials(player),
+        "chip": "Сезон игрока", "footer_note": "Средняя оценка болельщиков DOPX",
+    }, prefix="recap", size=OG, key_parts=(player, team, season, matches, rating, goals, photo_url, team_logo))
+    if html:
+        return html
     size = fit(player, "display", 62, 1300, 36)
     lines = wrap(player, size, 700, "display", 2)
     names = [{"text": t, "y": 196 + int(size * 1.0) + i * (size + 4)} for i, t in enumerate(lines)]
@@ -311,6 +362,13 @@ def badge_card(*, username: str, name: str, description: str, rarity: str, secre
 # ---------------- Сторис 1080×1920
 def story(*, accent_name: str, chip: str, number: str, label: str, sub: str = "", footer_note: str = "",
           image_url: str = "", progress: float = 0.72) -> str:
+    html = _html("cards/html/story.html", {
+        "accent_name": accent_name, "number": number, "label": label, "sub": sub, "image": image_data(image_url, 720),
+        "progress_pct": round(100 * max(0.05, min(progress, 1.0))), "chip": sentence(chip), "footer_note": footer_note,
+        "pad": "150px 80px 0",
+    }, prefix="story", size=(1080, 1920), key_parts=(accent_name, chip, number, label, sub, footer_note, image_url, progress))
+    if html:
+        return html
     image = image_data(image_url, 480)
     if image:  # фото в кольце, число под ним
         size = fit(number, "display", 200, 900, 90)

@@ -73,10 +73,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 django && useradd -u 1000 -g django -d /app -s /usr/sbin/nologin django
+# Chromium для карточек соцсетей (core/cards_html.py) — общий каталог, доступен пользователю django.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 # Фиксированный UID/GID 1000: media/ и logs/ — bind mount.
 # На сервере: chown -R 1000:1000 media logs.
 
 COPY --from=builder /opt/venv /opt/venv
+RUN playwright install --with-deps chromium && chmod -R a+rX /opt/ms-playwright && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

@@ -1,0 +1,30 @@
+{% extends "cards/html/_base.html" %}
+{# Сторис 1080×1920: кольцо с фото или числом, подпись, подвал. Отступы под интерфейс Instagram. #}
+{% block style %}
+.head { margin-top: 40px; }
+.brand { font-size: 40px; } .brand svg { width: 64px; height: 64px; }
+.chip { font-size: 28px; padding: 16px 28px 16px 22px; } .chip i { width: 14px; height: 14px; }
+.body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.ring { position: relative; width: 640px; height: 640px; border-radius: 999px; display: grid; place-items: center;
+  background: conic-gradient(from -90deg, var(--a2), var(--a) {{ progress_pct }}%, rgba(255, 255, 255, .08) 0);
+  filter: drop-shadow(0 0 70px color-mix(in oklab, var(--a) 45%, transparent)); }
+.ring::before { content: ""; position: absolute; inset: 36px; border-radius: inherit; background: #0B0E24; }
+.ring .in { position: relative; width: 520px; height: 520px; border-radius: 999px; overflow: hidden; display: grid; place-items: center; background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .14), rgba(255, 255, 255, .02)); }
+.ring .in img { width: 100%; height: 100%; object-fit: cover; }
+.big { font-size: 300px; line-height: .86; background: linear-gradient(180deg, #fff 30%, color-mix(in oklab, var(--a) 70%, #fff)); -webkit-background-clip: text; color: transparent; white-space: nowrap; }
+.ring .in .big { max-width: 430px; overflow: hidden; text-align: center; }
+.bg .pitch { display: none; }
+.under { margin-top: 70px; }
+.under .big { font-size: 210px; }
+.label { margin-top: 40px; font: 800 72px/1.08 'Inter Display'; letter-spacing: -.025em; text-wrap: balance; max-width: 920px; }
+.sub { margin-top: 26px; font: 600 40px/1.3 'Inter'; color: var(--mute); text-wrap: balance; max-width: 900px; }
+.foot { font-size: 30px; margin-bottom: 150px; } .foot b { font-size: 32px; }
+{% endblock %}
+{% block body %}
+<div class="body">
+  <div class="ring"><div class="in">{% if image %}<img src="{{ image }}">{% else %}<div class="big num" data-fit="1" data-min="140">{{ number }}</div>{% endif %}</div></div>
+  {% if image %}<div class="under"><div class="big num" data-fit="1" data-min="110">{{ number }}</div></div>{% endif %}
+  <div class="label" data-fit="2" data-min="48">{{ label }}</div>
+  {% if sub %}<div class="sub" data-fit="2" data-min="28">{{ sub }}</div>{% endif %}
+</div>
+{% endblock %}

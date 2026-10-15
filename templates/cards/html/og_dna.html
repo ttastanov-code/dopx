@@ -1,0 +1,56 @@
+{% extends "cards/html/_base.html" %}
+{# ДНК матча 1200×630: команды и счёт, главный факт, шкала драмы, герой и антигерой. #}
+{% block style %}
+.grid { flex: 1; display: grid; grid-template-columns: 1fr 380px; gap: 40px; margin-top: 34px; min-height: 0; }
+.left { display: flex; flex-direction: column; min-width: 0; }
+.teams { display: flex; align-items: center; gap: 16px; }
+.teams .logo-disc { width: 58px; height: 58px; }
+.teams .t { font: 700 26px/1.1 'Inter Display'; color: rgba(255, 255, 255, .88); }
+.teams .s { font: 800 34px/1 'Inter Display'; letter-spacing: -.02em; padding: 8px 14px; border-radius: 14px; background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); }
+.headline { margin-top: 26px; font: 800 46px/1.08 'Inter Display'; letter-spacing: -.025em; text-wrap: balance;
+  background: linear-gradient(180deg, #fff 30%, color-mix(in oklab, var(--a) 55%, #fff)); -webkit-background-clip: text; color: transparent; }
+.meter { margin-top: auto; padding-bottom: 26px; }
+.meter-top { display: flex; justify-content: space-between; align-items: baseline; font: 600 21px/1 'Inter'; color: var(--mute); }
+.meter-top .num { font-size: 40px; color: #fff; }
+.meter-top .num small { font: 600 20px 'Inter'; color: var(--mute); letter-spacing: 0; }
+.bar { position: relative; margin-top: 14px; height: 14px; border-radius: 99px; background: rgba(255, 255, 255, .09); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); }
+.bar b { position: absolute; inset: 0 auto 0 0; width: {{ drama_pct }}%; border-radius: inherit;
+  background: linear-gradient(90deg, var(--a2), var(--a)); box-shadow: 0 0 24px color-mix(in oklab, var(--a) 70%, transparent); }
+.bar b::after { content: ""; position: absolute; right: -2px; top: 50%; width: 22px; height: 22px; transform: translateY(-50%); border-radius: 99px; background: #fff; box-shadow: 0 0 0 5px color-mix(in oklab, var(--a) 45%, transparent), 0 4px 14px rgba(0, 0, 0, .5); }
+.facts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.facts span { font: 600 17px/1.3 'Inter'; color: rgba(255, 255, 255, .82); padding: 9px 14px; border-radius: 14px; background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.people { display: flex; flex-direction: column; gap: 16px; justify-content: center; }
+.person { padding: 22px 24px; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 6px 14px; }
+.person .tag { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font: 600 18px/1 'Inter'; color: var(--mute); }
+.person .tag i { width: 9px; height: 9px; border-radius: 99px; background: var(--c); box-shadow: 0 0 12px var(--c); }
+.person .name { font: 700 30px/1.1 'Inter Display'; letter-spacing: -.015em; }
+.person .score { font-size: 56px; line-height: .9; color: var(--c); text-shadow: 0 0 30px color-mix(in oklab, var(--c) 55%, transparent); }
+{% endblock %}
+{% block body %}
+<div class="grid">
+  <div class="left">
+    <div class="teams">
+      <span class="logo-disc">{% if home_logo %}<img src="{{ home_logo }}">{% else %}<b>{{ home_initials }}</b>{% endif %}</span>
+      <span class="t">{{ home }}</span>
+      <span class="s num">{{ score }}</span>
+      <span class="t">{{ away }}</span>
+      <span class="logo-disc">{% if away_logo %}<img src="{{ away_logo }}">{% else %}<b>{{ away_initials }}</b>{% endif %}</span>
+    </div>
+    {% if headline %}<div class="headline" data-fit="2" data-min="30">{{ headline }}</div>{% endif %}
+    <div class="meter">
+      <div class="meter-top"><span>{{ drama_label }}</span><span class="num">{{ drama_value }}<small>/100</small></span></div>
+      <div class="bar"><b></b></div>
+      {% if facts %}<div class="facts">{% for f in facts %}<span>{{ f }}</span>{% endfor %}</div>{% endif %}
+    </div>
+  </div>
+  <div class="people">
+    {% for p in people %}
+    <div class="glass person" style="--c: {{ p.color }}">
+      <span class="tag"><i></i>{{ p.label }}</span>
+      <span class="name" data-fit="2" data-min="22">{{ p.name }}</span>
+      <span class="score num">{{ p.score }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

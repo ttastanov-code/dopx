@@ -1,0 +1,90 @@
+<!doctype html>
+{# Общая основа карточек: фон (сетчатый градиент, линии поля, зерно), шрифты, стекло, шапка с логотипом и подвал. #}
+<html lang="ru"><head><meta charset="utf-8">
+<style>
+{{ font_css|safe }}
+:root { --a: {{ accent }}; --a2: {{ accent2 }}; --ink: #F5F6FF; --mute: rgba(235, 238, 255, .62); --line: rgba(255, 255, 255, .12); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: {{ w }}px; height: {{ h }}px; overflow: hidden; }
+body {
+  position: relative; font-family: 'Inter', sans-serif; color: var(--ink); background: #07091A;
+  -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; font-feature-settings: "tnum" 1, "cv11" 1;
+}
+/* Фон: три мягких пятна цвета, линии поля, зерно и виньетка. */
+.bg { position: absolute; inset: 0; overflow: hidden; }
+.bg::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(38% 46% at 82% 18%, color-mix(in oklab, var(--a) 70%, transparent), transparent 70%),
+    radial-gradient(42% 52% at 8% 96%, color-mix(in oklab, var(--a2) 62%, transparent), transparent 72%),
+    radial-gradient(30% 36% at 46% 58%, rgba(99, 72, 255, .28), transparent 70%),
+    linear-gradient(180deg, #0B0E24, #06071A);
+  filter: blur(30px) saturate(130%);
+}
+.bg .pitch { position: absolute; right: -6%; top: 50%; width: 62%; aspect-ratio: 1; transform: translateY(-50%); opacity: .09; }
+.bg::after {
+  content: ""; position: absolute; inset: 0; opacity: .16; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.vignette { position: absolute; inset: 0; background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(0, 0, 0, .55)); }
+
+.frame { position: absolute; inset: 0; padding: {{ pad|default:"56px 64px 48px" }}; display: flex; flex-direction: column; }
+.head { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 14px; font: 800 30px/1 'Inter Display'; letter-spacing: -.01em; }
+.brand svg { width: 48px; height: 48px; filter: drop-shadow(0 8px 18px rgba(79, 107, 255, .45)); }
+.chip {
+  display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px 12px 18px; border-radius: 999px;
+  font: 600 20px/1 'Inter'; letter-spacing: .01em; color: #fff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 0 0 1px rgba(255, 255, 255, .12);
+}
+.chip i { width: 10px; height: 10px; border-radius: 99px; background: var(--a); box-shadow: 0 0 14px var(--a); }
+
+.glass {
+  position: relative; border-radius: 30px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .15), rgba(255, 255, 255, .045) 60%, rgba(255, 255, 255, .07));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), inset 0 0 0 1px rgba(255, 255, 255, .1), 0 30px 60px -24px rgba(0, 0, 0, .7);
+  backdrop-filter: blur(26px) saturate(150%);
+}
+.logo-disc {
+  display: grid; place-items: center; border-radius: 999px; background: #fff; flex: none;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, .08), 0 18px 40px -12px rgba(0, 0, 0, .7);
+}
+.logo-disc img { width: 72%; height: 72%; object-fit: contain; }
+.logo-disc b { font: 800 30px/1 'Inter Display'; color: #1B1F3B; }
+
+.foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; font: 600 20px/1 'Inter'; color: var(--mute); }
+.foot b { font: 700 21px/1 'Inter Display'; color: #fff; letter-spacing: .01em; }
+.num { font-family: 'Inter Display'; font-weight: 800; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+{% block style %}{% endblock %}
+</style></head>
+<body>
+<div class="bg">
+  {# Центральный круг и линия поля — едва заметно, «футбольная» фактура. #}
+  <svg class="pitch" viewBox="0 0 200 200" fill="none" stroke="#fff" stroke-width="1.2"><circle cx="100" cy="100" r="62"/><circle cx="100" cy="100" r="3" fill="#fff"/><line x1="100" y1="-40" x2="100" y2="240"/><rect x="-60" y="-20" width="320" height="240" rx="2"/></svg>
+</div>
+<div class="vignette"></div>
+<div class="frame">
+  <div class="head">
+    <div class="brand">
+      <svg viewBox="0 0 48 48"><defs><linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4F6BFF"/><stop offset="1" stop-color="#9333EA"/></linearGradient></defs>
+        <rect width="48" height="48" rx="13" fill="url(#brand)"/><g transform="translate(4.8 4.8) scale(0.8)"><circle cx="24" cy="24" r="17" fill="none" stroke="#fff" stroke-width="3" opacity=".35"/><path d="M11.98 36.02 A17 17 0 1 1 37.02 13.07" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/><circle cx="37.02" cy="13.07" r="5.2" fill="url(#brand)" stroke="#fff" stroke-width="3.2"/><path d="M24 17.5 L30.2 22 L27.8 29.3 L20.2 29.3 L17.8 22 Z" fill="#fff"/></g></svg>
+      DOPX
+    </div>
+    {% if chip %}<span class="chip"><i></i>{{ chip }}</span>{% endif %}
+  </div>
+  {% block body %}{% endblock %}
+  <div class="foot"><span>{{ footer_note }}</span><b>dopx.kz</b></div>
+</div>
+<script>
+// Подгон кегля: [data-fit="N"] уменьшается, пока текст не уложится в N строк (без сжатия букв).
+window.__fit = () => {
+  document.querySelectorAll('[data-fit]').forEach((el) => {
+    const max = +el.dataset.fit, min = +(el.dataset.min || 18);
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    const lines = () => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+    while (size > min && (lines() > max || el.scrollWidth > el.clientWidth + 1)) { size -= 1; el.style.fontSize = size + 'px'; }
+  });
+};
+</script>
+</body></html>

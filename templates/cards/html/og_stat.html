@@ -1,0 +1,31 @@
+{% extends "cards/html/_base.html" %}
+{# «Большое число + подпись» 1200×630: серии, достижения, соцсети. Справа — кольцо прогресса с фото или логотипом. #}
+{% block style %}
+.body { flex: 1; display: grid; grid-template-columns: 1fr 360px; align-items: center; gap: 40px; }
+.big { font-size: 190px; line-height: .86; background: linear-gradient(180deg, #fff 30%, color-mix(in oklab, var(--a) 70%, #fff)); -webkit-background-clip: text; color: transparent;
+  filter: drop-shadow(0 20px 50px color-mix(in oklab, var(--a) 35%, transparent)); white-space: nowrap; }
+.label { margin-top: 22px; font: 800 44px/1.1 'Inter Display'; letter-spacing: -.02em; text-wrap: balance; }
+.sub { margin-top: 14px; font: 600 23px/1.35 'Inter'; color: var(--mute); text-wrap: pretty; }
+.ring { position: relative; width: 340px; height: 340px; border-radius: 999px; display: grid; place-items: center;
+  background: conic-gradient(from -90deg, var(--a2), var(--a) {{ progress_pct }}%, rgba(255, 255, 255, .08) 0);
+  filter: drop-shadow(0 0 40px color-mix(in oklab, var(--a) 40%, transparent)); }
+.ring::before { content: ""; position: absolute; inset: 22px; border-radius: inherit; background: #0B0E24; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.ring .in { position: relative; width: 260px; height: 260px; border-radius: 999px; overflow: hidden; display: grid; place-items: center;
+  background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .16), rgba(255, 255, 255, .03)); }
+.ring .in img.photo { width: 100%; height: 100%; object-fit: cover; }
+.ring .in img.logo { width: 62%; height: 62%; object-fit: contain; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, .5)); }
+.ring .in .mark { width: 120px; height: 120px; opacity: .9; }
+{% endblock %}
+{% block body %}
+<div class="body">
+  <div>
+    <div class="big num" data-fit="1" data-min="90">{{ number }}</div>
+    <div class="label" data-fit="2" data-min="30">{{ label }}</div>
+    {% if sub %}<div class="sub" data-fit="2" data-min="18">{{ sub }}</div>{% endif %}
+  </div>
+  <div class="ring"><div class="in">
+    {% if image %}<img class="{% if image_is_photo %}photo{% else %}logo{% endif %}" src="{{ image }}">
+    {% else %}<svg class="mark" viewBox="0 0 48 48"><g transform="translate(4.8 4.8) scale(0.8)"><circle cx="24" cy="24" r="17" fill="none" stroke="#fff" stroke-width="3" opacity=".35"/><path d="M11.98 36.02 A17 17 0 1 1 37.02 13.07" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/><circle cx="37.02" cy="13.07" r="5.2" fill="{{ accent }}" stroke="#fff" stroke-width="3.2"/><path d="M24 17.5 L30.2 22 L27.8 29.3 L20.2 29.3 L17.8 22 Z" fill="#fff"/></g></svg>{% endif %}
+  </div></div>
+</div>
+{% endblock %}
