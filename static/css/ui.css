@@ -3140,3 +3140,18 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   .dx-tabbar__item--center { align-self: stretch; justify-content: flex-end; padding-bottom: 5px; }
   .dx-tabbar__item.is-active:not(.dx-tabbar__item--center)::before { inset: 1px 2px; border-radius: 999px; }
 }
+
+/* Активный раздел — без подложки, как в iOS: цвет акцента, иконка плотнее, подпись жирнее; неактивные приглушены. */
+@media (max-width: 767px) {
+  .dx-tabbar__item.is-active:not(.dx-tabbar__item--center)::before { content: none; }
+  .dx-tabbar__item:not(.dx-tabbar__item--center) { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); transition: color .2s ease; }
+  .dx-tabbar__item.is-active:not(.dx-tabbar__item--center) { color: var(--color-primary); }
+  .dx-tabbar__item.is-active:not(.dx-tabbar__item--center) i { -webkit-text-stroke: .6px currentColor; }
+  .dx-tabbar__item.is-active:not(.dx-tabbar__item--center) > span:last-child { font-weight: 800; }
+  .dx-tabbar__item:not(.is-active) .dx-tabbar__avatar { opacity: .7; }
+  :root[data-theme="dark"] .dx-tabbar__item.is-active:not(.dx-tabbar__item--center) { color: color-mix(in oklab, var(--color-primary) 55%, white); }
+}
+@media (max-width: 767px) {
+  .dx-tabbar__item--center:not(.is-active) > span:last-child { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+  .dx-tabbar__item--center.is-active > span:last-child { color: var(--color-primary); font-weight: 800; }
+}
