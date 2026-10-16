@@ -273,7 +273,7 @@ class CoachDivergenceTests(_Fixture):
         flag = SuspiciousActivityFlag.objects.get(source="coach_stats_divergence")
         self.assertEqual(flag.details["pattern"], "overrated_despite_poor_play")
         summary = flag.human_summary()
-        self.assertIn("НЕ корректируются", summary["system_action"])
+        self.assertIn("не корректируется", summary["system_action"])
 
     def test_dismissed_coach_not_rechecked_for_30_days(self):
         agg_tasks._check_coach_stats_divergence(self.coach.id, self.ct, SuspiciousActivityFlag)

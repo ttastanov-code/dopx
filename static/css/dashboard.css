@@ -151,3 +151,16 @@ body.is-staff { background: color-mix(in oklab, var(--color-base-content) 2.5%, 
     .dsh-subtabs a.is-active { color: var(--color-primary-content); background: var(--color-primary); border-color: var(--color-primary); }
     .dsh-palette { padding-top: 4.5rem; }
 }
+
+/* ---- Антифрод: суть одной строкой, объяснение и цифры раскрываются ---- */
+.af-head { margin-top: .5rem; max-width: 48rem; font-size: .9375rem; font-weight: 600; line-height: 1.4; }
+.af-more { margin-top: .5rem; max-width: 48rem; }
+.af-more > summary { display: inline-flex; align-items: center; gap: .35rem; list-style: none; cursor: pointer; user-select: none;
+  font-size: .78rem; font-weight: 600; color: var(--color-primary); }
+.af-more > summary::-webkit-details-marker { display: none; }
+.af-more > summary::before { content: "›"; display: inline-block; font-size: 1rem; line-height: 1; transition: transform .2s ease; }
+.af-more[open] > summary::before { transform: rotate(90deg); }
+.af-dl { display: grid; gap: .6rem; margin-top: .6rem; padding: .85rem 1rem; border-radius: .9rem;
+  background: color-mix(in oklab, var(--color-base-content) 4%, transparent); }
+.af-dl dt { font-size: .6875rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.af-dl dd { margin: .1rem 0 0; font-size: .875rem; line-height: 1.45; }

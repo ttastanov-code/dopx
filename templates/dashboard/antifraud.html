@@ -49,26 +49,30 @@
                         {% if flag.match %}<span class="text-xs opacity-50">· {{ flag.match }}</span>{% endif %}
                     </div>
                     {% with summary=flag.human_summary %}
-                    {% if summary.what_happened %}
-                    {# Расхождение со статистикой: 4 блока текста, поправка — текущая (live_correction). #}
-                    <div class="text-sm mt-2 leading-snug space-y-2 max-w-3xl">
-                        <div><span class="font-semibold">Что произошло.</span> {{ summary.what_happened }}</div>
-                        <div class="opacity-80"><span class="font-semibold">Почему это подозрительно.</span> {{ summary.why }}</div>
-                        <div class="opacity-80"><span class="font-semibold">Что система уже сделала.</span> {{ summary.system_action }}</div>
-                        <div class="opacity-80"><span class="font-semibold">Что делать вам.</span> {{ summary.what_to_do }}</div>
-                    </div>
-                    {% else %}
-                    <div class="text-sm mt-2 leading-snug">{{ summary.explanation }}</div>
-                    <div class="text-xs opacity-60 mt-2 space-y-0.5">
-                        <div><span class="font-semibold opacity-80">Отклонить:</span> {{ summary.dismiss_hint }}.</div>
-                        <div><span class="font-semibold opacity-80">Подтвердить:</span> {{ summary.confirm_hint }}.</div>
-                    </div>
-                    {% endif %}
+                    {# Суть одной строкой; объяснение и подсказки — по нажатию «Подробнее». #}
+                    <p class="af-head">{{ summary.headline|default:summary.explanation }}</p>
+                    <details class="af-more">
+                        <summary>Подробнее: что произошло и что делать</summary>
+                        {% if summary.what_happened %}
+                        <dl class="af-dl">
+                            <dt>Что произошло</dt><dd>{{ summary.what_happened }}</dd>
+                            <dt>Почему подозрительно</dt><dd>{{ summary.why }}</dd>
+                            <dt>Что уже сделала система</dt><dd>{{ summary.system_action }}</dd>
+                            <dt>Что делать вам</dt><dd>{{ summary.what_to_do }}</dd>
+                        </dl>
+                        {% else %}
+                        <dl class="af-dl">
+                            <dt>Что произошло</dt><dd>{{ summary.explanation }}</dd>
+                            <dt>«Отклонить»</dt><dd>{{ summary.dismiss_hint|capfirst }}.</dd>
+                            <dt>«Подтвердить»</dt><dd>{{ summary.confirm_hint|capfirst }}.</dd>
+                        </dl>
+                        {% endif %}
+                    </details>
                     {% endwith %}
                     {% if flag.details %}
-                    <details class="mt-2">
+                    <details class="af-more">
                         {# Детали — с понятными подписями (readable_details). #}
-                        <summary class="text-[11px] opacity-40 cursor-pointer select-none">Цифры и как считается</summary>
+                        <summary>Цифры и как считается</summary>
                         {# Каждая пара — отдельная плашка: подпись сверху, значение ниже. #}
                         <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-3xl">
                             {% for label, value in flag.readable_details %}
