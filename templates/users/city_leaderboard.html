@@ -3,6 +3,7 @@
 {% load ui_extras %}
 
 {% block content %}
+{% url 'users:leaderboard' as back_href %}{% include 'components/_back_link.html' with href=back_href label="Назад к рейтингу" %}
 
 {# === ШАПКА === #}
 <div class="mb-8">

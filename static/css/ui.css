@@ -3207,3 +3207,30 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .dx-tour__first { font-size: .66rem; font-weight: 500; opacity: .8; }
 .dx-tour__last { font-size: .75rem; font-weight: 700; line-height: 1.2; overflow-wrap: break-word; }
 @media (max-width: 640px) { .dx-tour { width: 6.75rem; min-height: 6.25rem; } }
+
+/* ---- Пагинация: отдельные круглые кнопки с зазором, текущая — цветом акцента ---- */
+.dx-pager { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin-top: 1.5rem; }
+.dx-pager__btn { display: inline-grid; place-items: center; min-width: 2.5rem; height: 2.5rem; padding: 0 .6rem; border-radius: 999px;
+  font-size: .875rem; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--color-base-content);
+  background: color-mix(in oklab, var(--color-base-content) 5%, transparent); transition: background .15s ease, color .15s ease, transform .15s ease; }
+a.dx-pager__btn:hover { background: color-mix(in oklab, var(--color-primary) 12%, transparent); color: var(--color-primary); }
+a.dx-pager__btn:active { transform: scale(.94); }
+.dx-pager__btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.dx-pager__btn.is-current { color: var(--color-primary-content); background: var(--color-primary); box-shadow: 0 6px 14px -8px color-mix(in oklab, var(--color-primary) 80%, transparent); }
+.dx-pager__btn--arrow { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-base-content) 12%, transparent); }
+.dx-pager__btn.is-off { opacity: .35; }
+.dx-pager__gap { min-width: 1.25rem; text-align: center; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+
+/* Список тумблеров настроек: тонкие разделители с отступом, без чёрных кромок. */
+.dx-toggles > * + * { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); border-radius: 0; }
+.dx-toggles > * { border-radius: .9rem; }
+/* Кнопка «Сохранить» прилипает к низу экрана, над нижним меню телефона. */
+.dx-savebar { position: sticky; bottom: 0; z-index: 30; margin: 0 -.5rem; padding: .75rem .5rem;
+  background: color-mix(in oklab, var(--color-base-100) 88%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+@media (max-width: 767px) {
+  body.has-tabbar .dx-savebar { bottom: calc(.55rem + 3.75rem + .5rem + env(safe-area-inset-bottom, 0px)); border: 0; background: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0 .5rem .5rem; }
+  body.has-tabbar .dx-savebar .btn { box-shadow: 0 10px 24px -10px color-mix(in oklab, var(--color-primary) 80%, transparent); }
+  body.has-tabbar:has(.dx-savebar) #scroll-to-top { display: none; }
+}

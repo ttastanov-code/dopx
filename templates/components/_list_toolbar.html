@@ -9,7 +9,7 @@ season=all сохраняется, чтобы фильтр не сбрасыва
         <i class="ti ti-search"></i>
         <input type="search" name="q" value="{{ q }}" placeholder="{{ placeholder }}" autocomplete="off" enterkeyhint="search">
     </label>
-    {% if teams or positions %}
+    {% if teams or positions or sort %}
     <div class="lt__chips">
         {% if teams %}
         <span class="lt__chip{% if request.GET.team %} is-on{% endif %}">

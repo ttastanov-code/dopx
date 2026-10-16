@@ -6,7 +6,7 @@
 
 {% include 'components/_season_scope_toggle.html' %}
 
-{% include 'components/_list_toolbar.html' with placeholder="Поиск тренера" q=search_query teams=teams positions=False %}
+{% include 'components/_list_toolbar.html' with placeholder="Поиск тренера" q=search_query teams=teams positions=False sort=sort %}
 
 {% if rows %}
 <div class="el">

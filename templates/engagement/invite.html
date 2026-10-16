@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
+{% url 'users:profile' as back_href %}{% include 'components/_back_link.html' with href=back_href label="Назад к профилю" %}
 <div class="max-w-3xl mx-auto px-2 sm:px-0 space-y-5">
     <section class="dx-pass-hero dx-pass-hero--invite">
         <div class="dx-pass-hero__main">

@@ -27,7 +27,8 @@ class CoachListView(ListView):
         self.show_all = self.request.GET.get('season') == 'all'
 
         # Prefetch последнего агрегата — без N+1.
-        queryset = Coach.objects.filter(is_active=True).select_related('team')
+        # «Все сезоны» — и тренеры, которые сейчас не работают в лиге.
+        queryset = Coach.objects.select_related('team') if self.show_all else Coach.objects.filter(is_active=True).select_related('team')
 
         if self.active_season and not self.show_all:
             queryset = queryset.filter(team__teamseason__season=self.active_season)
@@ -45,11 +46,22 @@ class CoachListView(ListView):
         if team_id:
             queryset = queryset.filter(team_id=team_id)
 
-        return queryset.order_by('last_name')
+        # По умолчанию — по рейтингу болельщиков (среднее четырёх критериев), без оценок — в конце; ?sort=name — по алфавиту.
+        self.sort = 'name' if self.request.GET.get('sort') == 'name' else 'rating'
+        if self.sort == 'name':
+            return queryset.order_by('last_name', 'first_name')
+        from django.db.models import F, OuterRef, Subquery
+        rated = CoachMatchAggregate.objects.filter(published_q(), total_votes__gte=min_votes_for_display(), coach=OuterRef('pk'))
+        if self.active_season and not self.show_all:
+            rated = rated.filter(match__season=self.active_season)
+        parts = [vote_weighted_avg(f) for f in ('avg_tactics', 'avg_substitutions', 'avg_management', 'avg_impact')]
+        rating_sq = rated.values('coach').annotate(r=(parts[0] + parts[1] + parts[2] + parts[3]) / 4).values('r')[:1]
+        return queryset.annotate(sort_rating=Subquery(rating_sq)).order_by(F('sort_rating').desc(nulls_last=True), 'last_name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все тренеры — DOPX'
+        context['sort'] = self.sort
         # Оценка тренера — среднее четырёх критериев по опубликованным матчам (а не один случайный матч).
         from aggregates.services import entity_ratings
 

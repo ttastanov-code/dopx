@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
+{% url 'core:home' as back_href %}{% include 'components/_back_link.html' with href=back_href label="На главную" %}
 <!-- === HEADER === -->
 <div class="mb-6 md:mb-8 px-2 sm:px-0">
   <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">

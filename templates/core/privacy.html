@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
+{% url 'core:home' as back_href %}{% include 'components/_back_link.html' with href=back_href label="На главную" %}
 <!-- === HEADER === -->
 <div class="mb-6 md:mb-8 px-2 sm:px-0">
   <div class="flex flex-wrap items-start justify-between gap-3 mb-2">

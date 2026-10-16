@@ -2,6 +2,7 @@
 {% load ui_extras engagement_extras report_tags %}
 
 {% block content %}
+{% url 'engagement:friend_leagues' as back_href %}{% include 'components/_back_link.html' with href=back_href label="Назад к лигам друзей" %}
 <div class="max-w-3xl mx-auto px-2 sm:px-0 space-y-5">
     <section class="dx-pass-hero dx-pass-hero--leagues">
         <div class="dx-pass-hero__main">

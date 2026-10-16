@@ -1,0 +1,10 @@
+{% comment %}
+Умная кнопка «Назад»: ведёт на предыдущую страницу и называет её (static/js/smart-back-links.js).
+{% include 'components/_back_link.html' with href=... label="Назад к матчам" %} — куда, если пришли извне.
+{% endcomment %}
+<div class="mb-4 md:mb-6 px-2 sm:px-0">
+    <a href="{{ href|default:'/' }}" class="back-link" data-back-link>
+        <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
+        <span>{{ label|default:"На главную" }}</span>
+    </a>
+</div>

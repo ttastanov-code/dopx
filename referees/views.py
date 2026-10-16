@@ -32,6 +32,10 @@ class RefereeListView(ListView):
             total_matches=Count('match', filter=season_q, distinct=True),
         )
 
+        # Текущий сезон — только судьи, работавшие в нём; «Все сезоны» — все.
+        if self.active_season and not self.show_all:
+            queryset = queryset.filter(total_matches__gt=0)
+
         # Поиск.
         search = self.request.GET.get('q')
         if search:
@@ -42,12 +46,23 @@ class RefereeListView(ListView):
             ]
             queryset = queryset.filter(id__in=matching_ids)
 
-        # Сначала те, кто судил больше матчей в сезоне.
-        return queryset.order_by('-total_matches', 'last_name')
+        # По умолчанию — по качеству решений в оценках болельщиков, без оценок — в конце по числу матчей; ?sort=name — по алфавиту.
+        self.sort = 'name' if self.request.GET.get('sort') == 'name' else 'rating'
+        if self.sort == 'name':
+            return queryset.order_by('last_name', 'first_name')
+        from django.db.models import F, OuterRef, Subquery
+        from aggregates.services import min_votes_for_display
+        rated = RefereeMatchAggregate.objects.filter(published_q(), total_votes__gte=min_votes_for_display(), referee=OuterRef('pk'))
+        if self.active_season and not self.show_all:
+            rated = rated.filter(match__season=self.active_season)
+        rating_sq = rated.values('referee').annotate(r=vote_weighted_avg('avg_decision_quality')).values('r')[:1]
+        return queryset.annotate(sort_rating=Subquery(rating_sq)).order_by(
+            F('sort_rating').desc(nulls_last=True), '-total_matches', 'last_name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все судьи — DOPX'
+        context['sort'] = self.sort
         # Средние — за тот же сезон и с тем же порогом голосов, что у остальных списков.
         from aggregates.models import RefereeMatchAggregate
         from aggregates.services import entity_ratings

@@ -2,6 +2,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
+{% url 'core:home' as back_href %}{% include 'components/_back_link.html' with href=back_href label="На главную" %}
 {# === ЗАГОЛОВОК === #}
 <div class="mb-6 md:mb-10 text-center max-w-3xl mx-auto px-2">
   <div class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3 md:mb-4">

@@ -1,15 +1,15 @@
 {% load querystring_extras %}
-{# Пагинация списков: соседние страницы, первая и последняя с многоточием; фильтры в адресе сохраняются. #}
+{# Пагинация списков: соседние страницы, первая и последняя, пропуски — «…»; фильтры в адресе сохраняются. Стили — css/ui.css (dx-pager). #}
 {% if is_paginated %}
-<nav class="flex justify-center mt-6" aria-label="Страницы">
-    <div class="join">
-        {% if page_obj.has_previous %}<a href="?{% query_transform page=page_obj.previous_page_number %}" class="join-item btn btn-sm" aria-label="Назад"><i class="ti ti-chevron-left"></i></a>{% endif %}
-        {% for num in page_obj.paginator.page_range %}
-        {% if page_obj.number == num %}<span class="join-item btn btn-sm btn-active">{{ num }}</span>
-        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' or num == 1 or num == page_obj.paginator.num_pages %}<a href="?{% query_transform page=num %}" class="join-item btn btn-sm">{{ num }}</a>
-        {% elif num == page_obj.number|add:'-3' or num == page_obj.number|add:'3' %}<span class="join-item btn btn-sm btn-disabled">…</span>{% endif %}
-        {% endfor %}
-        {% if page_obj.has_next %}<a href="?{% query_transform page=page_obj.next_page_number %}" class="join-item btn btn-sm" aria-label="Вперёд"><i class="ti ti-chevron-right"></i></a>{% endif %}
-    </div>
+<nav class="dx-pager" aria-label="Страницы">
+    {% if page_obj.has_previous %}<a href="?{% query_transform page=page_obj.previous_page_number %}" class="dx-pager__btn dx-pager__btn--arrow" aria-label="Предыдущая страница"><i class="ti ti-chevron-left"></i></a>
+    {% else %}<span class="dx-pager__btn dx-pager__btn--arrow is-off" aria-hidden="true"><i class="ti ti-chevron-left"></i></span>{% endif %}
+    {% for num in page_obj.paginator.page_range %}
+    {% if page_obj.number == num %}<span class="dx-pager__btn is-current" aria-current="page">{{ num }}</span>
+    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' or num == 1 or num == page_obj.paginator.num_pages %}<a href="?{% query_transform page=num %}" class="dx-pager__btn">{{ num }}</a>
+    {% elif num == page_obj.number|add:'-3' or num == page_obj.number|add:'3' %}<span class="dx-pager__gap" aria-hidden="true">…</span>{% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}<a href="?{% query_transform page=page_obj.next_page_number %}" class="dx-pager__btn dx-pager__btn--arrow" aria-label="Следующая страница"><i class="ti ti-chevron-right"></i></a>
+    {% else %}<span class="dx-pager__btn dx-pager__btn--arrow is-off" aria-hidden="true"><i class="ti ti-chevron-right"></i></span>{% endif %}
 </nav>
 {% endif %}

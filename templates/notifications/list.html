@@ -2,6 +2,7 @@
 {% load ui_extras %}
 {# Лента уведомлений: вкладки разделов, группы по дням, «Показать ещё». #}
 {% block content %}
+{% url 'core:home' as back_href %}{% include 'components/_back_link.html' with href=back_href label="На главную" %}
 <div class="nf-page">
     <header class="nf-head">
         <div class="min-w-0">
