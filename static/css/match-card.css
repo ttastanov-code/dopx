@@ -103,3 +103,21 @@
 .mx .dx-react__btn { flex-direction: row !important; flex-wrap: wrap; justify-content: center; text-align: center; line-height: 1.15; padding: .35rem .5rem !important; }
 .mx .dx-react__btn .ti { font-size: .85rem; }
 @media (max-width: 480px) { .mx .dx-react__btn { font-size: .72rem; gap: 3px; } .mx .dx-react__btn .ti { display: none; } }
+
+/* Больше воздуха: просторнее строки, подробности и кнопки отделены от табло, разделители с отступом. */
+.mx { padding: 20px 22px; }
+.mx + .mx::before { left: 22px; right: 22px; }
+.mlist__day { padding: 18px 22px 4px; }
+.mlist__day:not(:first-child) { padding-top: 22px; }
+.mx__info { gap: 6px; margin-top: 14px; }
+.mx__line { font-size: .8rem; }
+.mx .mpred { margin-top: 16px; }
+.mx .dx-react { margin-top: 16px; }
+.mx__note { margin-top: 12px; }
+.mx__votes { margin-top: 10px; }
+@media (max-width: 480px) {
+  .mx { padding: 18px 16px; }
+  .mx + .mx::before { left: 16px; right: 16px; }
+  .mlist__day { padding: 16px 16px 2px; }
+  .mlist__day:not(:first-child) { padding-top: 20px; }
+}

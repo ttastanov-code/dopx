@@ -3,6 +3,8 @@ from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
 from adminbot import views as adminbot_views
 from django.urls import path, include
+from django.views.generic import RedirectView
+from django.templatetags.static import static as static_url
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.decorators.cache import cache_page
@@ -25,6 +27,8 @@ schema_patterns = [
 ]
 
 urlpatterns = [
+    # Браузеры сначала спрашивают /favicon.ico (Safari — для главной), без него иконки на главной нет.
+    path('favicon.ico', RedirectView.as_view(url=static_url('favicons/favicon.ico'), permanent=True)),
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
     path('matches/', include('matches.urls')),
