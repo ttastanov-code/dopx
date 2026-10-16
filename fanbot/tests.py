@@ -100,7 +100,7 @@ class LoginFlowTests(TestCase):
 
 
 @override_settings(FAN_BOT_TOKEN=TOKEN, FAN_BOT_USERNAME="dopx_fans_bot", FAN_BOT_APP_NAME="app",
-                   VAPID_PRIVATE_KEY="", VAPID_PUBLIC_KEY="")
+                   VAPID_PRIVATE_KEY="", VAPID_PUBLIC_KEY="", SITE_URL="https://dopx.kz")
 class NotifyTests(TestCase):
     def test_push_fan_out_also_goes_to_telegram_even_without_vapid(self):
         from notifications.services import send_push_to_users
@@ -327,8 +327,18 @@ class ChannelLinkTests(TestCase):
         call.assert_called_once_with("pinChatMessage", chat_id="@dopx_kz", message_id=77, disable_notification=True)
 
 
-@override_settings(FAN_BOT_TOKEN=TOKEN, FAN_BOT_USERNAME="dopx_kz_bot", FAN_BOT_APP_NAME="app")
+@override_settings(FAN_BOT_TOKEN=TOKEN, FAN_BOT_USERNAME="dopx_kz_bot", FAN_BOT_APP_NAME="app", SITE_URL="https://dopx.kz")
 class DirectLinkTests(TestCase):
+    def test_temporary_address_links_to_bot_chat(self):
+        # Сайт на туннеле: адрес Mini App в @BotFather мог устареть — ведём в чат бота.
+        from adminbot import channel
+        from adminbot.models import ChannelPost
+
+        with self.settings(SITE_URL="https://abc-8000.inc1.devtunnels.ms"):
+            self.assertEqual(services.miniapp_link("x"), "")
+            self.assertEqual(channel._button_rows(ChannelPost(text="x", buttons=[]))[-1][0][1],
+                             "https://t.me/dopx_kz_bot?start=channel")
+
     def test_channel_button_opens_mini_app_and_allow_enables_notifications(self):
         from adminbot import channel
         from adminbot.models import ChannelPost
