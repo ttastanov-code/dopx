@@ -169,6 +169,10 @@ class Command(BaseCommand):
 
         User = get_user_model()
         dashboard = opts["dashboard"]
+        # Служебный аккаунт с правами суперпользователя — только на ноутбуке, никогда на проде.
+        if not opts["user"]:
+            from core.management.seed_guard import ensure_seed_allowed
+            ensure_seed_allowed()
         # Временный служебный пользователь: открытие страниц меняет аккаунт (серия дней, задания) — живых не трогаем.
         temp_user = None
         if opts["user"]:
