@@ -3197,3 +3197,6 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   .xi-row--stagger .xi-p__img, .xi-row--compact .xi-p__img { width: 3rem; height: 3rem; font-size: .8rem; }
   .xi-row--stagger .xi-p__name, .xi-row--compact .xi-p__name { font-size: .7rem; }
 }
+/* Поле сборной — пропорции настоящего поля: на ПК не шире 44rem, по центру. */
+.xi-pitch { max-width: 44rem; margin-left: auto; margin-right: auto; }
+@media (min-width: 768px) { .xi-pitch .xi-row { gap: .5rem; } .xi-p__name { font-size: .8125rem; } }
