@@ -154,3 +154,14 @@
   .mxr__btn { justify-content: center; padding: 0 4px; font-size: .66rem; gap: 3px; }
 }
 @media (max-width: 640px) { .mxr__btn { white-space: nowrap; } .mxr__btn .ti { display: none; } }
+/* После прогноза: пилюли той же ширины, что и кнопки 1·Х·2; выбор виден на самой кнопке (короткая пульсация). */
+.mxp__after { display: grid; gap: 4px; width: 92px; margin-top: 6px; }
+.mxp__link { justify-content: center; height: 26px; padding: 0 8px; border-radius: 8px; font-size: .6875rem; font-weight: 700;
+  color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 10%, transparent); text-decoration: none; }
+.mxp__link:hover { background: color-mix(in oklab, var(--color-primary) 16%, transparent); }
+.mxp__link .ti { font-size: .8rem; }
+.mxp__link--ghost { color: color-mix(in oklab, var(--color-base-content) 65%, transparent); background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+.mxp__link.is-copied { color: var(--color-success); }
+.mxp__after ~ * , .mxp:has(.mxp__after) .mxp__btn.is-mine { animation: mxp-pop .5s cubic-bezier(.2,.9,.3,1.4); }
+@keyframes mxp-pop { 0% { transform: scale(.85); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mxp__btn.is-mine { animation: none !important; } }

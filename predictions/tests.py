@@ -345,8 +345,8 @@ class AfterPredictionTests(PredictionsTestCase):
         response = self.client.post(reverse('predictions:predict', args=[first.id]),
                                     {'choice': MatchPrediction.CHOICE_HOME, 'compact': '1'})
         self.assertEqual(response['HX-Trigger'], 'dopx:predicted')
-        self.assertContains(response, 'Принято')
-        self.assertContains(response, 'Следующий (1)')
+        self.assertContains(response, 'Вызов другу')
+        self.assertContains(response, 'Далее · 1')
         self.assertContains(response, reverse('matches:detail', args=[second.id]))
         self.assertContains(response, 'data-share-url')
 
