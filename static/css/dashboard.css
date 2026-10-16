@@ -164,3 +164,17 @@ body.is-staff { background: color-mix(in oklab, var(--color-base-content) 2.5%, 
   background: color-mix(in oklab, var(--color-base-content) 4%, transparent); }
 .af-dl dt { font-size: .6875rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 .af-dl dd { margin: .1rem 0 0; font-size: .875rem; line-height: 1.45; }
+
+/* ---- Журнал ошибок бота: одна строка на событие, текст переносится, технические детали раскрываются ---- */
+.bot-log { min-width: 0; max-width: 100%; border-radius: .75rem; border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent); padding: .5rem .75rem; }
+.bot-log > summary { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .6rem; row-gap: .15rem; align-items: baseline; list-style: none; cursor: pointer; }
+.bot-log > summary::-webkit-details-marker { display: none; }
+.bot-log__lvl { width: .55rem; height: .55rem; border-radius: 99px; background: var(--color-warning); grid-row: 1 / span 2; align-self: center; }
+.bot-log__lvl.is-err { background: var(--color-error); }
+.bot-log__main { min-width: 0; font-size: .8125rem; overflow-wrap: anywhere; }
+.bot-log__main em { font-style: normal; font-weight: 700; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.bot-log__when { grid-column: 2; font-size: .72rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.bot-log__raw { margin-top: .5rem; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-size: .72rem; opacity: .75; }
+/* Карточки страницы бота не раздвигают экран: длинные значения переносятся. */
+.dash-main .card-body { min-width: 0; }
+.dash-main .kv__warn, .dash-main .kv__row b { overflow-wrap: anywhere; min-width: 0; }

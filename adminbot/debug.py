@@ -54,8 +54,41 @@ def _dt(ts: float):
     return datetime.fromtimestamp(ts, tz=dt_tz.utc)
 
 
+# Понятное описание частых ошибок для журнала в дашборде (технический текст — под «подробнее»).
+_HUMAN = (
+    ("NameResolutionError", "Нет интернета: не удалось найти сервер Telegram"),
+    ("Failed to resolve", "Нет интернета: не удалось найти сервер Telegram"),
+    ("Connection reset by peer", "Связь с Telegram оборвалась"),
+    ("Connection aborted", "Связь с Telegram оборвалась"),
+    ("Read timed out", "Telegram долго не отвечал"),
+    ("ConnectTimeout", "Не удалось подключиться к Telegram"),
+    ("Redis недоступен", "Redis не запущен"),
+    ("Error 61 connecting", "Redis не запущен"),
+    ("бота слушает другой процесс", "Бот запущен ещё в одном окне — этот ждёт"),
+    ("Too Many Requests", "Telegram попросил подождать (слишком много запросов)"),
+    ("Forbidden", "Telegram запретил действие (бота заблокировали или нет прав)"),
+)
+
+
+def humanize(text: str) -> str:
+    for needle, label in _HUMAN:
+        if needle in (text or ""):
+            return label
+    first = (text or "").strip().splitlines()[0] if text else ""
+    return first[:160]
+
+
 def recent_log() -> list[dict]:
-    return [{**r, "at": _dt(r["ts"])} for r in reversed(cache.get(f"adminbot:log:{_env()}") or [])]
+    """Записи журнала, новые сначала; одинаковые подряд склеены в одну с числом повторов."""
+    out: list[dict] = []
+    for r in reversed(cache.get(f"adminbot:log:{_env()}") or []):
+        human = humanize(r.get("text", ""))
+        if out and out[-1]["human"] == human and out[-1]["level"] == r.get("level"):
+            out[-1]["count"] += 1
+            out[-1]["first_at"] = _dt(r["ts"])
+            continue
+        out.append({**r, "at": _dt(r["ts"]), "first_at": None, "human": human, "count": 1})
+    return out
 
 
 def clear_log() -> None:

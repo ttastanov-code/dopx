@@ -114,9 +114,14 @@
 
     <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Журнал ошибок бота</div>
     {% for r in log %}
-    <details class="rounded-lg border border-base-200 px-3 py-1.5 text-xs">
-        <summary class="cursor-pointer flex gap-2 items-baseline"><span class="badge badge-xs {% if r.level == 'ERROR' or r.level == 'CRITICAL' %}badge-error{% else %}badge-warning{% endif %}">{{ r.level }}</span><span class="opacity-60 shrink-0">{{ r.at|date:"d.m H:i:s" }} · {{ r.process }}</span><span class="break-words">{{ r.text }}</span></summary>
-        <pre class="whitespace-pre-wrap break-words mt-2 opacity-80">{{ r.logger }}
+    {# Строка: что случилось понятными словами, когда и сколько раз подряд; технический текст — по нажатию. #}
+    <details class="bot-log">
+        <summary>
+            <span class="bot-log__lvl {% if r.level == 'ERROR' or r.level == 'CRITICAL' %}is-err{% endif %}"></span>
+            <span class="bot-log__main"><b>{{ r.human }}</b>{% if r.count > 1 %} <em>×{{ r.count }}</em>{% endif %}</span>
+            <span class="bot-log__when">{% if r.first_at %}{{ r.first_at|date:"d.m H:i" }} – {% endif %}{{ r.at|date:"d.m H:i" }} · {{ r.process }}</span>
+        </summary>
+        <pre class="bot-log__raw">{{ r.logger }}
 {{ r.text }}</pre>
     </details>
     {% empty %}
