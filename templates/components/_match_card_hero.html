@@ -1,0 +1,6 @@
+{# Игрок матча в правой колонке строки сыгранного матча: фото, фамилия, оценка болельщиков. Контекст: hero. #}
+<span class="mx__hero" title="Игрок матча по оценкам болельщиков: {{ hero.player.full_name }}">
+    {% if hero.player.photo_display %}<img src="{{ hero.player.photo_display }}" alt="">{% else %}<span class="mx__hero-ph">{{ hero.player.last_name|default:hero.player.full_name|first|upper }}</span>{% endif %}
+    <span class="mx__hero-name">{{ hero.player.last_name|default:hero.player.full_name }}</span>
+    <span class="mx__hero-score"><i class="ti ti-medal"></i>{{ hero.score|floatformat:1 }}</span>
+</span>

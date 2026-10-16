@@ -165,3 +165,24 @@
 .mxp__after ~ * , .mxp:has(.mxp__after) .mxp__btn.is-mine { animation: mxp-pop .5s cubic-bezier(.2,.9,.3,1.4); }
 @keyframes mxp-pop { 0% { transform: scale(.85); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .mxp__btn.is-mine { animation: none !important; } }
+
+/* ---- Сыгранный матч: игрок матча в колонке, момент строкой, факты плашками ---- */
+.mx__hero { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; min-width: 0; }
+.mx__hero img, .mx__hero-ph { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.mx__hero-ph { display: grid; place-items: center; font-size: .8rem; font-weight: 800; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.mx__hero-name { font-size: .72rem; font-weight: 650; line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; }
+.mx__hero-score { display: inline-flex; align-items: center; gap: 2px; font-size: .75rem; font-weight: 800; color: #b7791f; font-variant-numeric: tabular-nums; }
+:root[data-theme="dark"] .mx__hero-score { color: #f5c451; }
+.mx__hero-score .ti { font-size: .8rem; }
+.mx--finished .mx__foot { flex-direction: column; align-items: stretch; gap: 8px; }
+.mx__moment { display: flex; align-items: flex-start; gap: 6px; font-size: .8125rem; line-height: 1.35; color: color-mix(in oklab, var(--color-base-content) 78%, transparent); }
+.mx__moment .ti { color: var(--color-warning); margin-top: 2px; flex: none; }
+.mx__pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.mx__pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: .72rem; font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 62%, transparent); background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
+.mx__pill .ti { font-size: .8rem; opacity: .8; }
+.mx__pill b { color: var(--color-base-content); }
+.mx__pill--hot { color: var(--color-secondary); background: color-mix(in oklab, var(--color-secondary) 9%, transparent); }
+.mx--finished .mxr { width: auto; }
+.mx--finished .mxr__q { font-size: .6875rem; }
+.mx--finished .mxr__btn { height: 22px; font-size: .66rem; }
