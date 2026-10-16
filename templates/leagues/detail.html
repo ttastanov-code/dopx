@@ -149,7 +149,7 @@
                 <span class="dx-tour__num">{{ r.tour }}</span>
                 <span class="dx-tour__label">тур</span>
                 {% if r.player_of_round_name %}
-                <span class="dx-tour__hero" title="Игрок тура">{{ r.player_of_round_name }}</span>
+                {% with parts=r.player_of_round_name|split:" " %}<span class="dx-tour__hero" title="Игрок тура: {{ r.player_of_round_name }}"><span class="dx-tour__first">{{ parts.0 }}</span><span class="dx-tour__last">{{ parts|slice:"1:"|join:" " }}</span></span>{% endwith %}
                 {% endif %}
             </a>
             {% endfor %}

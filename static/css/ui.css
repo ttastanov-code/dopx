@@ -3200,3 +3200,10 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 /* Поле сборной — пропорции настоящего поля: на ПК не шире 44rem, по центру. */
 .xi-pitch { max-width: 44rem; margin-left: auto; margin-right: auto; }
 @media (min-width: 768px) { .xi-pitch .xi-row { gap: .5rem; } .xi-p__name { font-size: .8125rem; } }
+
+/* Плитки «Лучшие туров»: номер сверху, игрок тура — имя мелко, фамилия крупнее, слова не рвутся по буквам. */
+.dx-tour { width: 7.25rem; min-height: 6.5rem; justify-content: flex-start; }
+.dx-tour__hero { display: flex; flex-direction: column; gap: 1px; margin-top: auto; padding-top: .5rem; overflow-wrap: normal; word-break: normal; hyphens: none; }
+.dx-tour__first { font-size: .66rem; font-weight: 500; opacity: .8; }
+.dx-tour__last { font-size: .75rem; font-weight: 700; line-height: 1.2; overflow-wrap: break-word; }
+@media (max-width: 640px) { .dx-tour { width: 6.75rem; min-height: 6.25rem; } }
