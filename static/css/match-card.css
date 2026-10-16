@@ -245,3 +245,9 @@
 @media (max-width: 640px) {
   .mx__fact-l { grid-column: 2; font-size: .6rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in oklab, var(--c) 80%, var(--color-base-content)); }
 }
+/* Реакции: в кнопке подпись сверху, доля крупно снизу — текст не упирается в края выделения. */
+.mx--finished .mxr__btn { flex-direction: column; gap: 1px; height: auto; min-height: 42px; padding: 5px 6px; line-height: 1.15; white-space: nowrap; }
+.mx--finished .mxr__btn b { font-size: .8125rem; font-weight: 800; color: var(--color-base-content); }
+.mx--finished .mxr__btn.is-on b { color: var(--color-primary); }
+.mx--finished .mxr__btn .ti { display: none; }
+@media (max-width: 640px) { .mx--finished .mxr__btn { font-size: .66rem; } }
