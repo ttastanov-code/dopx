@@ -124,9 +124,9 @@ class RefereeListVsDetailSeasonCountTests(TestCase):
         )
 
     def test_list_and_detail_agree_on_zero_by_default(self):
+        # В текущем сезоне матчей нет — в списке сезона судьи нет, на странице судьи 0.
         list_response = self.client.get(reverse('referees:list'))
-        referees = {r.id: r for r in list_response.context['referees']}
-        self.assertEqual(referees[self.referee.id].total_matches, 0)
+        self.assertNotIn(self.referee.id, {r.id for r in list_response.context['referees']})
 
         detail_response = self.client.get(reverse('referees:detail', args=[self.referee.id]))
         self.assertEqual(detail_response.context['stats']['total_matches'], 0)

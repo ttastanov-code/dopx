@@ -90,10 +90,11 @@ class CoachListSeasonFilterTests(CoachesFixtureMixin, TestCase):
         self.assertIn(in_season, coaches)
         self.assertIn(outside_season, coaches)
 
-    def test_inactive_coach_excluded_regardless_of_season(self):
+    def test_inactive_coach_only_in_all_seasons(self):
+        # Ушедший из лиги тренер — только в «Все сезоны».
         inactive = self._coach("Тренер", "Неактивный", is_active=False)
-        response = self.client.get(reverse('coaches:list'), {'season': 'all'})
-        self.assertNotIn(inactive, list(response.context['coaches']))
+        self.assertNotIn(inactive, list(self.client.get(reverse('coaches:list')).context['coaches']))
+        self.assertIn(inactive, list(self.client.get(reverse('coaches:list'), {'season': 'all'}).context['coaches']))
 
 
 class CoachDetailNotFoundTests(TestCase):
