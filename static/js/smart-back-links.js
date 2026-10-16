@@ -17,11 +17,13 @@
   function read() { try { return JSON.parse(sessionStorage.getItem(KEY)) || []; } catch (e) { return []; } }
   function write(t) { try { sessionStorage.setItem(KEY, JSON.stringify(t.slice(-30))); } catch (e) { /* без памяти — шаблонная ссылка */ } }
 
-  // Имя страницы для подписи: заголовок h1 (команда, игрок, матч), иначе title до « — ».
+  // Имя страницы для подписи: meta dx-page-name из шаблона («Кайсар — Ордабасы»), иначе h1, иначе title.
   function pageName() {
+    var meta = document.querySelector('meta[name="dx-page-name"]');
+    if (meta && meta.content.trim()) return meta.content.trim();
     var h = document.querySelector('main h1, h1');
     var t = (h && h.textContent || document.title.split(/ [—|-] /)[0] || '').replace(/\s+/g, ' ').trim();
-    return t.length > 40 ? '' : t;
+    return t.length > 48 ? '' : t;
   }
   function labelFor(entry) {
     for (var i = 0; i < LISTS.length; i++) if (LISTS[i][0].test(entry.path)) return LISTS[i][1];
