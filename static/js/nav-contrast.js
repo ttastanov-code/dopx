@@ -35,6 +35,8 @@
     queued = false;
     // В тёмной теме текст меню и так светлый.
     if (document.documentElement.getAttribute('data-theme') === 'dark') { nav.classList.remove('dx-nav--on-dark'); return; }
+    // Телефон: верх шапки слит с зоной часов Safari (цвет фона), тёмный режим над тёмным фоном дал бы шов.
+    if (window.matchMedia('(max-width: 1023px)').matches) { nav.classList.remove('dx-nav--on-dark'); return; }
     const y = nav.getBoundingClientRect().bottom + 2;
     const w = window.innerWidth;
     const xs = Array.from({ length: 11 }, (_, i) => w * (0.04 + i * 0.092));
