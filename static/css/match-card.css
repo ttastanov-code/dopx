@@ -229,3 +229,19 @@
   .mx__facts { display: flex; flex-wrap: wrap; gap: 8px; }
   .mx__fact { flex: 1 1 12rem; max-width: 20rem; }
 }
+/* Телефон: факты — единым блоком-списком (значок в кружке, подпись, текст), без карусели и обрезки. */
+@media (max-width: 640px) {
+  .mx__facts { display: grid; gap: 0; overflow: visible; margin: 0; padding: 4px 12px; border-radius: 14px; scroll-snap-type: none;
+    background: color-mix(in oklab, var(--color-base-content) 3.5%, transparent); }
+  .mx__fact { width: auto; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; row-gap: 1px; align-items: center;
+    padding: 9px 0; border-radius: 0; background: none; box-shadow: none; }
+  .mx__fact + .mx__fact { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+  .mx__fact-k { display: contents; }
+  .mx__fact-k .ti { grid-row: 1 / span 2; grid-column: 1; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: .9rem;
+    color: color-mix(in oklab, var(--c) 85%, var(--color-base-content)); background: color-mix(in oklab, var(--c) 14%, transparent); }
+  .mx__fact-k { font-size: .6rem; }
+  .mx__fact-v { grid-column: 2; font-size: .8125rem; }
+}
+@media (max-width: 640px) {
+  .mx__fact-l { grid-column: 2; font-size: .6rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in oklab, var(--c) 80%, var(--color-base-content)); }
+}
