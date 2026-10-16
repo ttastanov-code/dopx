@@ -186,3 +186,46 @@
 .mx--finished .mxr { width: auto; }
 .mx--finished .mxr__q { font-size: .6875rem; }
 .mx--finished .mxr__btn { height: 22px; font-size: .66rem; }
+
+/* ---- Факты сыгранного матча: карточки «подпись + факт» ---- */
+.mx__facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 8px; }
+.mx__fact { --c: var(--color-base-content); display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 12px; border-radius: 14px;
+    background: color-mix(in oklab, var(--c) 5%, var(--color-base-100)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 9%, transparent); }
+.mx__fact-k { display: inline-flex; align-items: center; gap: 4px; font-size: .625rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: color-mix(in oklab, var(--c) 80%, var(--color-base-content)); }
+.mx__fact-k .ti { font-size: .8rem; }
+.mx__fact-v { font-size: .8125rem; font-weight: 600; line-height: 1.3; color: var(--color-base-content); overflow-wrap: break-word; }
+.mx__fact--moment { --c: #e0a20b; }
+.mx__fact--hero { --c: #b7791f; }
+.mx__fact--table { --c: var(--color-primary); }
+.mx__fact--hot { --c: var(--color-secondary); }
+.mx__fact--dna { --c: #0ea5a4; }
+@media (max-width: 640px) {
+  .mx__facts { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 0 -14px; padding: 0 14px; }
+  .mx__facts::-webkit-scrollbar { display: none; }
+  .mx__fact { flex: 0 0 auto; width: min(14rem, 72%); scroll-snap-align: start; }
+}
+
+/* ---- Реакции трибун: сегментный переключатель на всю ширину ---- */
+.mx--finished .mxr { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); align-items: center; gap: 4px; width: 100%; padding: 3px; border-radius: 12px;
+    background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
+.mx--finished .mxr__q { padding: 0 8px 0 6px; font-size: .6875rem; white-space: nowrap; }
+.mx--finished .mxr__btn { height: 28px; justify-content: center; border-radius: 9px; background: transparent; font-size: .72rem; }
+.mx--finished .mxr__btn:hover { background: var(--color-base-100); }
+.mx--finished .mxr__btn.is-on { background: var(--color-base-100); color: var(--color-primary); box-shadow: 0 1px 3px rgb(20 30 60 / .12); }
+@media (max-width: 640px) {
+  .mx--finished .mxr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mx--finished .mxr__q { grid-column: 1 / -1; padding: 2px 6px 0; }
+  .mx--finished .mxr__btn { font-size: .66rem; }
+}
+
+/* Фамилия игрока матча — без переноса по буквам. */
+.mx__hero-name { overflow-wrap: normal; word-break: normal; hyphens: auto; font-size: .7rem; }
+.mx--finished .mx__foot > * { flex-shrink: 0; }
+.mx__fact { justify-content: flex-start; }
+/* Подвал сыгранного матча — сеткой, факты — переносимым рядом (без auto-fill: Chrome занижал высоту). */
+.mx--finished .mx__foot { display: grid; gap: 8px; }
+@media (min-width: 641px) {
+  .mx__facts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mx__fact { flex: 1 1 12rem; max-width: 20rem; }
+}
