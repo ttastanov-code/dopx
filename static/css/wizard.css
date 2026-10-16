@@ -405,3 +405,49 @@ div:has(> .wz-list:not(:has(> *))) > .wz-list-title { display: none; }
   .wizard-slider::-moz-range-thumb { height: 1.3rem; }
   .wz-card .card-body { padding: 1rem 1.1rem !important; }
 }
+
+/* ============================================================
+   КРИТЕРИЙ = ШКАЛА ИЗ СЕГМЕНТОВ (как оценка нагрузки в Apple Fitness).
+   Сверху название и крупная цифра, под ними 10 сегментов с цифрами; выбранные заливаются цветом по нарастающей.
+   input range остаётся в форме (клавиатура, wizard-sliders.js), визуально скрыт. Перекрывает прежние «капсулы».
+   ============================================================ */
+.wz-slider-card.has-scale { position: relative; padding: 0; margin-top: 1.1rem; border: 0; }
+.wz-slider-card.has-scale:first-child, .space-y-3\.5 > .wz-slider-card.has-scale:first-child { margin-top: 0 !important; }
+.space-y-3\.5 > .wz-slider-card.has-scale, .wz-player__sliders .wz-slider-card.has-scale { margin-top: 1.1rem !important; }
+.wz-player__sliders .wz-slider-card.has-scale:first-of-type { margin-top: .6rem !important; }
+.wz-slider-card.has-scale > div:first-child {
+    position: static; height: auto; padding: 0; margin: 0 0 .55rem !important; transform: none; pointer-events: auto;
+    display: flex; align-items: baseline; justify-content: space-between; gap: .75rem;
+}
+.wz-slider-card.has-scale > div:first-child label { font-size: .9375rem !important; font-weight: 600; }
+.wz-slider-card.has-scale .wz-slider-card__value { font-size: 1.375rem; font-weight: 800; line-height: 1; min-width: 2.5rem; }
+.wz-slider-card.has-scale .wz-slider-card__value::after { font-size: .75rem; }
+.wz-slider-card.has-scale.wz-slider-card--untouched .wz-slider-card__value { font-size: 1.1rem; }
+/* Сам input — для формы и клавиатуры. */
+.wz-slider-card.has-scale .wizard-slider {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 2.6rem !important; margin: 0; opacity: 0; pointer-events: none;
+}
+.wz-slider-card.has-scale:has(.wizard-slider:focus-visible) .wz-scale { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+
+.wz-scale { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; height: 2.6rem; touch-action: pan-y; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.wz-scale__seg {
+    display: grid; place-items: center; border-radius: .6rem; font-size: .8125rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+    background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    transition: background .18s ease, color .18s ease, transform .18s cubic-bezier(.2, .9, .3, 1.3);
+}
+.wz-scale__seg:first-child { border-radius: .85rem .6rem .6rem .85rem; }
+.wz-scale__seg:last-child { border-radius: .6rem .85rem .85rem .6rem; }
+.wz-scale:hover .wz-scale__seg:not(.is-on) { background: color-mix(in oklab, var(--color-base-content) 8%, transparent); }
+/* Заливка по нарастающей: от светлого акцента к насыщенному. */
+.wz-scale__seg.is-on {
+    color: color-mix(in oklab, var(--color-primary-content) 92%, transparent);
+    background: color-mix(in oklab, var(--color-primary) calc(45% + var(--k) * 55%), var(--color-base-100));
+}
+.wz-scale__seg.is-cur { transform: scaleY(1.08); box-shadow: 0 6px 14px -6px color-mix(in oklab, var(--color-primary) 70%, transparent); font-weight: 800; }
+.wz-slider-card--untouched .wz-scale__seg { background: color-mix(in oklab, var(--color-base-content) 6%, transparent); color: color-mix(in oklab, var(--color-base-content) 45%, transparent); transform: none; box-shadow: none; }
+:root[data-theme="dark"] .wz-scale__seg { background: rgb(255 255 255 / .07); }
+:root[data-theme="dark"] .wz-scale__seg.is-on { background: color-mix(in oklab, var(--color-primary) calc(45% + var(--k) * 55%), #0f1220); color: #fff; }
+/* Подписи 0 / 50 / 100 у шкалы судьи — уже не нужны, шкала сама показывает деления. */
+.wz-slider-card.has-scale > input[type="hidden"] + div { display: none; }
+@media (prefers-reduced-motion: reduce) { .wz-scale__seg { transition: none; } }

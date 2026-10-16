@@ -428,3 +428,49 @@
 .dx-match-grid { align-items: stretch; }
 .dx-match-grid > .mrow { display: flex; flex-direction: column; }
 .dx-match-grid > .mrow > .mpred { margin-top: auto; padding-top: 10px; }
+
+/* ============================================================
+   ТАБЛО: две команды с гербами по бокам, в центре крупно время или счёт.
+   Перекрывает «компактный» вариант выше. Спокойные отступы, прогноз — удобный переключатель.
+   ============================================================ */
+.mrow { padding: 16px 18px 18px; border-radius: 22px; }
+.mrow--scheduled .mrow__badge { display: none; } /* время и день — на табло */
+.mrow__top { margin-bottom: 14px; }
+.mrow__board { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.mrow__side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; text-align: center; }
+.mrow__logo { width: 48px; height: 48px; object-fit: contain; }
+.mrow__logo--fallback { display: grid; place-items: center; border-radius: 50%; font-size: 1.1rem; font-weight: 800;
+  background: color-mix(in oklab, var(--color-base-content) 7%, transparent); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.mrow__name { font-size: .9375rem; font-weight: 650; line-height: 1.2; overflow-wrap: anywhere; text-wrap: balance; }
+.mrow__side.is-winner .mrow__name { font-weight: 800; }
+.mrow__side.is-loser .mrow__name { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.mrow__mid { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 6.5rem; padding: 0 4px; }
+.mrow__big { font-size: 1.75rem; font-weight: 800; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--color-base-content); white-space: nowrap; }
+.mrow__big i { font-style: normal; margin: 0 .2em; opacity: .35; }
+.mrow__big--time { font-size: 1.5rem; }
+.mrow--live .mrow__big { color: var(--color-error); }
+.mrow__small { font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); text-align: center; white-space: nowrap; }
+.mrow--live .mrow__small { color: var(--color-error); }
+.mrow__mid-ico { font-size: 1.5rem; opacity: .4; }
+.mrow__arrow { display: none; }
+
+.mrow__ctx { justify-content: center; gap: 6px; margin-top: 14px; font-size: .78rem; }
+.mrow__ctx-item { padding: 5px 10px; border-radius: 999px; background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
+
+.mpred { margin-top: 14px; }
+.mpred__seg { gap: 6px; padding: 0; background: none; }
+.mpred__opt { min-height: 2.75rem; border-radius: 14px; font-size: .875rem; gap: 8px;
+  background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
+.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-content) 8%, transparent); }
+.mpred__opt.is-mine { background: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100)); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 55%, transparent); }
+.mpred__opt.is-result { box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-success) 55%, transparent); }
+
+/* Главная: одна колонка — карточки дышат; на очень широком экране две. */
+.dx-match-grid { grid-template-columns: minmax(0, 1fr) !important; gap: .85rem; }
+@media (min-width: 1400px) { .dx-match-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+@media (max-width: 400px) { .mrow__logo { width: 40px; height: 40px; } .mrow__mid { min-width: 5.5rem; } .mrow__big { font-size: 1.5rem; } }
+@media (max-width: 640px) {
+  .mrow__ctx { gap: 3px 12px; margin-top: 12px; }
+  .mrow__ctx-item { padding: 0; background: none; }
+}
+.mrow__key-moment, .mrow__table-impact, .mrow__sensation { justify-content: center; text-align: center; margin-top: 12px; }

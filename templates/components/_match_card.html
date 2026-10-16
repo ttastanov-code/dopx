@@ -93,14 +93,26 @@ data-background-poll — без глобального лоадера.
     {% endif %}
 
     {# === КОМАНДЫ: друг под другом, справа счёт (live/завершён) === #}
-    <div class="mrow__body">
-        <div class="mrow__teams">
-            {% include "components/_match_card_team.html" with t=match.home_team sc=match.home_score other=match.away_score %}
-            {% include "components/_match_card_team.html" with t=match.away_team sc=match.away_score other=match.home_score %}
+    {# === ТАБЛО: герб и название каждой команды, в центре время, счёт или статус === #}
+    <div class="mrow__board">
+        {% include "components/_match_card_team.html" with t=match.home_team sc=match.home_score other=match.away_score %}
+        <div class="mrow__mid" data-live-pop>
+            {% if match.status == 'finished' or match.status == 'live' %}
+            <span class="mrow__big">{{ match.home_score|default_if_none:"0" }}<i>:</i>{{ match.away_score|default_if_none:"0" }}</span>
+            <span class="mrow__small">{% if match.status == 'live' %}{% if match.live_clock %}{% include 'components/_live_clock.html' with match=match %}{% else %}идёт{% endif %}{% else %}завершён{% endif %}</span>
+            {% elif match.status == 'postponed' %}
+            <i class="ti ti-calendar-off mrow__mid-ico"></i><span class="mrow__small">перенесён</span>
+            {% elif match.status == 'cancelled' %}
+            <i class="ti ti-ban mrow__mid-ico"></i><span class="mrow__small">отменён</span>
+            {% elif match.kickoff_known %}
+            <span class="mrow__big mrow__big--time">{{ match.start_time|time:"H:i" }}</span>
+            <span class="mrow__small" x-text="dayText">{{ match.start_time|date:"D, j E"|lower }}</span>
+            {% else %}
+            <span class="mrow__big mrow__big--time">—:—</span>
+            <span class="mrow__small">{{ match.start_time|date:"j E"|lower }}, время уточняется</span>
+            {% endif %}
         </div>
-        {% if match.status == 'postponed' %}<i class="ti ti-calendar-off mrow__side-ico"></i>
-        {% elif match.status == 'cancelled' %}<i class="ti ti-ban mrow__side-ico"></i>{% endif %}
-        <i class="ti ti-chevron-right mrow__arrow" aria-hidden="true"></i>
+        {% include "components/_match_card_team.html" with t=match.away_team sc=match.away_score other=match.home_score %}
     </div>
 
     {% if match.card_home_form_text or match.card_away_form_text or match.card_h2h %}

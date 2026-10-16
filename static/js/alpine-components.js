@@ -370,6 +370,7 @@ document.addEventListener('alpine:init', () => {
     // Дата — из data-kickoff.
     Alpine.data('matchCountdown', () => ({
         countdownText: '',
+        dayText: '',  // для табло карточки: день без времени (время показано крупно)
         _timerId: null,
         init() {
             const kickoffIso = this.$el.dataset.kickoff;
@@ -390,6 +391,7 @@ document.addEventListener('alpine:init', () => {
             const diffMs = kickoffMs - Date.now();
             if (diffMs <= 0) {
                 this.countdownText = 'Начинается';
+                this.dayText = 'начинается';
                 if (this._timerId) clearInterval(this._timerId);
                 // Карточка перерисуется сама (статус live, счёт) — без перезагрузки страницы.
                 const el = this.$el;
@@ -408,11 +410,14 @@ document.addEventListener('alpine:init', () => {
             if (dayKey(kickoff) === dayKey(new Date())) {
                 const left = hours >= 1 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
                 this.countdownText = `Сегодня в ${time} · через ${left}`;
+                this.dayText = `сегодня · через ${left}`;
             } else if (dayKey(kickoff) === dayKey(tomorrow)) {
                 this.countdownText = `Завтра в ${time}`;
+                this.dayText = 'завтра';
             } else {
                 const day = kickoff.toLocaleDateString('ru-RU', { timeZone: tz, weekday: 'short', day: '2-digit', month: '2-digit' });
                 this.countdownText = `${day.charAt(0).toUpperCase()}${day.slice(1)} в ${time}`;
+                this.dayText = day;
             }
         },
     }));

@@ -13,10 +13,16 @@
         // Поправка на ширину ручки (6px): заливка кончается ровно под ней.
         el.style.setProperty('--wz-fill', `calc(3px + (100% - 6px) * ${pct / 100})`);
         const ticks = el._wzTicks;
-        if (ticks) ticks.forEach((t) => t.classList.toggle('is-on', parseFloat(t.dataset.v) <= val));
+        if (ticks) {
+            let cur = null;
+            ticks.forEach((t) => { const on = parseFloat(t.dataset.v) <= val; t.classList.toggle('is-on', on); t.classList.remove('is-cur'); if (on) cur = t; });
+            if (cur) cur.classList.add('is-cur');
+        }
     }
 
-    // Деления шкалы: не больше 11 точек (0–100 с шагом 5 — каждые 10).
+    // Шкала из сегментов (как оценка нагрузки в Apple Fitness): 1–10 — по сегменту на значение,
+    // 0–100 с шагом 5 — сегмент на каждые 10. Нажатие или проведение пальцем ставит значение в input range,
+    // сам input остаётся в форме и для клавиатуры (визуально скрыт, фокус подсвечивает шкалу).
     function addTicks(el) {
         const card = el.closest('.wz-slider-card');
         if (!card || el._wzTicks) return;
@@ -24,18 +30,50 @@
         let every = step;
         while ((max - min) / every > 10) every += step;
         const box = document.createElement('div');
-        box.className = 'wz-ticks';
+        box.className = 'wz-scale';
         box.setAttribute('aria-hidden', 'true');
         const list = [];
-        for (let v = min; v <= max + 1e-9; v += every) {
-            const i = document.createElement('i');
-            i.dataset.v = v;
-            i.style.setProperty('--k', (v - min) / (max - min));
-            box.appendChild(i);
-            list.push(i);
+        const count = Math.round((max - min) / every) + 1;
+        for (let v = min, k = 0; v <= max + 1e-9; v += every, k++) {
+            const seg = document.createElement('span');
+            seg.className = 'wz-scale__seg';
+            seg.dataset.v = v;
+            seg.style.setProperty('--k', count > 1 ? k / (count - 1) : 1);
+            seg.textContent = (max - min) <= 10 ? v : '';
+            box.appendChild(seg);
+            list.push(seg);
         }
         el.insertAdjacentElement('beforebegin', box);
         el._wzTicks = list;
+        card.classList.add('has-scale');
+
+        const setFrom = (x) => {
+            const r = box.getBoundingClientRect();
+            const idx = Math.min(list.length - 1, Math.max(0, Math.floor(((x - r.left) / r.width) * list.length)));
+            const v = list[idx].dataset.v;
+            if (el.value !== String(v) || card.classList.contains('wz-slider-card--untouched')) {
+                el.value = v;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        };
+        let active = null;
+        box.addEventListener('pointerdown', (e) => {
+            active = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+            if (e.pointerType !== 'touch') { setFrom(e.clientX); box.setPointerCapture(e.pointerId); active.moved = true; }
+        });
+        box.addEventListener('pointermove', (e) => {
+            if (!active || active.id !== e.pointerId) return;
+            if (!active.moved && Math.abs(e.clientX - active.x) > 6 && Math.abs(e.clientX - active.x) > Math.abs(e.clientY - active.y)) active.moved = true;
+            if (active.moved) setFrom(e.clientX);
+        });
+        const end = (e) => {
+            if (!active) return;
+            if (!active.moved && e.type === 'pointerup' && Math.abs(e.clientY - active.y) < 8) setFrom(e.clientX);
+            active = null;
+        };
+        box.addEventListener('pointerup', end);
+        box.addEventListener('pointercancel', () => { active = null; });
     }
 
     // Заметка шага по умолчанию; шаблоны переопределяют её через data-wz-untouched-hint.
