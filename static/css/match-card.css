@@ -143,3 +143,14 @@
 .mxp__ok { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--color-success); }
 .mxp__link { display: inline-flex; align-items: center; gap: 3px; border: 0; background: none; padding: 0; cursor: pointer; font-size: .6875rem; font-weight: 700; color: var(--color-primary); }
 .mxp__link { white-space: nowrap; }
+/* Реакции с подписями: что значит каждая кнопка видно сразу. */
+.mxr { flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-left: 0; width: 100%; }
+.mxr__q { font-size: .72rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); margin-right: 2px; }
+.mxr__btn { gap: 4px; padding: 0 9px; font-weight: 600; }
+.mxr__btn b { font-weight: 800; }
+@media (max-width: 640px) {
+  .mxr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .mxr__q { grid-column: 1 / -1; margin: 2px 0 0; }
+  .mxr__btn { justify-content: center; padding: 0 4px; font-size: .66rem; gap: 3px; }
+}
+@media (max-width: 640px) { .mxr__btn { white-space: nowrap; } .mxr__btn .ti { display: none; } }
