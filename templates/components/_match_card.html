@@ -1,5 +1,5 @@
 {% load static %}
-{% load match_extras %}
+{% load match_extras ui_extras %}
 {% comment %}
 Карточка матча (главная и /matches/).
 {% include 'components/_match_card.html' with match=match %}
@@ -92,75 +92,23 @@ data-background-poll — без глобального лоадера.
     </div>
     {% endif %}
 
-    {# === ГЛАВНАЯ СТРОКА: герб — имя — VS/счёт — имя — герб — стрелка === #}
-    <div class="mrow__main">
-        <div class="mrow__team mrow__team--home">
-            {% if match.home_team.logo_display %}
-            <img src="{{ match.home_team.logo_display }}" alt="" class="mrow__crest">
-            {% else %}
-            <div class="mrow__crest-fallback">{{ match.home_team.name|first|upper }}</div>
-            {% endif %}
-            <span class="mrow__team-name {% if match.status == 'finished' and match.home_score > match.away_score %}mrow__team-name--winner{% endif %}">
-                {{ match.home_team.name }}
-            </span>
+    {# === КОМАНДЫ: друг под другом, справа счёт (live/завершён) === #}
+    <div class="mrow__body">
+        <div class="mrow__teams">
+            {% include "components/_match_card_team.html" with t=match.home_team sc=match.home_score other=match.away_score %}
+            {% include "components/_match_card_team.html" with t=match.away_team sc=match.away_score other=match.home_score %}
         </div>
-
-        <div class="mrow__center" data-live-pop>
-            {% if match.status == 'finished' or match.status == 'live' %}
-            {% render_score_short match.home_score match.away_score %}
-            {% elif match.status == 'postponed' %}
-            <i class="ti ti-calendar-off opacity-40"></i>
-            {% elif match.status == 'cancelled' %}
-            <i class="ti ti-ban opacity-40"></i>
-            {% else %}
-            <span class="mrow__center--vs">VS</span>
-            {% endif %}
-        </div>
-
-        <div class="mrow__team mrow__team--away">
-            {% if match.away_team.logo_display %}
-            <img src="{{ match.away_team.logo_display }}" alt="" class="mrow__crest">
-            {% else %}
-            <div class="mrow__crest-fallback">{{ match.away_team.name|first|upper }}</div>
-            {% endif %}
-            <span class="mrow__team-name {% if match.status == 'finished' and match.away_score > match.home_score %}mrow__team-name--winner{% endif %}">
-                {{ match.away_team.name }}
-            </span>
-        </div>
-
+        {% if match.status == 'postponed' %}<i class="ti ti-calendar-off mrow__side-ico"></i>
+        {% elif match.status == 'cancelled' %}<i class="ti ti-ban mrow__side-ico"></i>{% endif %}
         <i class="ti ti-chevron-right mrow__arrow" aria-hidden="true"></i>
     </div>
 
     {% if match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
-    {# Форма команд и очные встречи — только для несыгранных матчей. #}
-    <div class="mrow__context">
-        {% if match.card_home_form_text %}
-        <div class="mrow__context-row" title="Форма {{ match.home_team.name }} за последние матчи">
-            {% if 'Не побеждает' in match.card_home_form_text %}
-            <i class="ti ti-trending-down"></i>
-            {% else %}
-            <i class="ti ti-trending-up"></i>
-            {% endif %}
-            <span><strong>{{ match.home_team.name }}</strong>: {{ match.card_home_form_text }}</span>
-        </div>
-        {% endif %}
-        {% if match.card_away_form_text %}
-        <div class="mrow__context-row" title="Форма {{ match.away_team.name }} за последние матчи">
-            {% if 'Не побеждает' in match.card_away_form_text %}
-            <i class="ti ti-trending-down"></i>
-            {% else %}
-            <i class="ti ti-trending-up"></i>
-            {% endif %}
-            <span><strong>{{ match.away_team.name }}</strong>: {{ match.card_away_form_text }}</span>
-        </div>
-        {% endif %}
-        {% if match.card_h2h %}
-        {# Подпись видна сразу, без title. #}
-        <div class="mrow__context-row" title="Очные встречи этих команд за последние {{ match.card_h2h.count }} матчей">
-            <i class="ti ti-history"></i>
-            <span>Очные встречи ({{ match.card_h2h.count }}): <strong>{{ match.home_team.name }} {{ match.card_h2h.home_wins }}</strong> · Ничьи {{ match.card_h2h.draws }} · <strong>{{ match.away_team.name }} {{ match.card_h2h.away_wins }}</strong></span>
-        </div>
-        {% endif %}
+    {# Форма и очные встречи — одной строкой (несыгранные матчи). #}
+    <div class="mrow__ctx">
+        {% if match.card_home_form_text %}<span class="mrow__ctx-item" title="Форма {{ match.home_team.name }} за последние матчи"><i class="ti {% if 'Не побеждает' in match.card_home_form_text %}ti-trending-down{% else %}ti-trending-up{% endif %}"></i><b>{{ match.home_team.name }}</b> {{ match.card_home_form_text|lower }}</span>{% endif %}
+        {% if match.card_away_form_text %}<span class="mrow__ctx-item" title="Форма {{ match.away_team.name }} за последние матчи"><i class="ti {% if 'Не побеждает' in match.card_away_form_text %}ti-trending-down{% else %}ti-trending-up{% endif %}"></i><b>{{ match.away_team.name }}</b> {{ match.card_away_form_text|lower }}</span>{% endif %}
+        {% if match.card_h2h %}<span class="mrow__ctx-item" title="Очные встречи за последние {{ match.card_h2h.count }} матчей: победы {{ match.home_team.name }} · ничьи · победы {{ match.away_team.name }}"><i class="ti ti-history"></i>Очные {{ match.card_h2h.home_wins }}–{{ match.card_h2h.draws }}–{{ match.card_h2h.away_wins }}</span>{% endif %}
     </div>
     {% endif %}
 
@@ -212,7 +160,7 @@ data-background-poll — без глобального лоадера.
     {% endif %}
 
     {# Нижняя строка — только если есть что показать. #}
-    {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' or match.card_engagement %}
+    {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' or match.card_engagement and not match.list_prediction_counts %}
     <div class="mrow__footer">
         <div class="mrow__footer-meta">
             {% if match.aggregate and match.aggregate.total_votes %}
@@ -222,7 +170,7 @@ data-background-poll — без глобального лоадера.
             </span>
             {% endif %}
             {# Вовлечённость в прогноз. #}
-            {% if match.card_engagement %}
+            {% if match.card_engagement and not match.list_prediction_counts %}
             <span class="mrow__engagement">{{ match.card_engagement }}</span>
             {% endif %}
         </div>

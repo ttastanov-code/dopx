@@ -374,3 +374,57 @@
     .mrow:hover .mrow__arrow { transform: none !important; }
     .mrow__live-dot { animation: none !important; }
 }
+
+/* ============================================================
+   Компактная карточка (как Apple Sports / FotMob): команды друг под другом, счёт справа,
+   контекст одной строкой, прогноз — тонкий переключатель.
+   ============================================================ */
+.mrow { padding: 12px 14px; border-radius: 18px; }
+.mrow__top { margin-bottom: 8px; }
+.mrow__meta { font-size: .72rem; }
+.mrow__body { display: flex; align-items: center; gap: 10px; }
+.mrow__teams { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.mrow__t { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.mrow__t .mrow__crest, .mrow__t .mrow__crest-fallback { width: 22px; height: 22px; }
+.mrow__t .mrow__team-name { font-size: .9375rem; font-weight: 600; line-height: 1.2; }
+.mrow__score { min-width: 1.4rem; text-align: right; font-size: 1.0625rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.mrow__t.is-winner .mrow__team-name, .mrow__t.is-winner .mrow__score { font-weight: 800; }
+.mrow__t.is-loser .mrow__team-name, .mrow__t.is-loser .mrow__score { color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.mrow--live .mrow__score { color: var(--color-error); }
+.mrow__side-ico { font-size: 1.1rem; opacity: .4; }
+.mrow__arrow { flex: none; }
+
+.mrow__ctx { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: .75rem; line-height: 1.3;
+  color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
+.mrow__ctx-item { display: inline-flex; align-items: center; gap: 4px; }
+.mrow__ctx-item b { color: var(--color-base-content); font-weight: 650; }
+.mrow__ctx-item .ti { font-size: .85rem; }
+
+/* Прогноз: сегментированный переключатель. */
+.mpred { margin-top: 10px; }
+.mpred__seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; border-radius: 12px;
+  background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+.mpred__opt { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 2rem; padding: 0 .4rem; border-radius: 9px;
+  font-size: .78rem; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
+.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-100) 70%, transparent); }
+.mpred__opt:disabled { cursor: default; }
+.mpred__label { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }
+.mpred__label .ti { font-size: .8rem; }
+.mpred__pct { font-weight: 600; opacity: .75; }
+.mpred__opt.is-mine { background: var(--color-base-100); color: var(--color-primary); box-shadow: 0 1px 3px rgb(0 0 0 / .12), 0 0 0 1px color-mix(in oklab, var(--color-primary) 25%, transparent); }
+.mpred__opt.is-mine .mpred__pct { opacity: 1; }
+.mpred__opt.is-result { background: color-mix(in oklab, var(--color-success) 16%, var(--color-base-100)); color: var(--color-success); }
+:root[data-theme="dark"] .mpred__opt.is-mine { background: color-mix(in oklab, var(--color-primary) 22%, var(--color-base-100)); }
+.mpred .dx-predicted-row { margin-top: 8px; }
+
+/* Нижняя строка компактнее. */
+.mrow__footer { margin-top: 10px; padding-top: 8px; }
+.dx-match-grid { display: grid; gap: .6rem; align-items: start; }
+@media (min-width: 768px) { .dx-match-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; } }
+.dx-match-grid > :only-child { grid-column: 1 / -1; }
+.dx-match-grid > .text-center { grid-column: 1 / -1; }
+/* В сетке карточки ряда одной высоты, прогноз — у нижнего края. */
+.dx-match-grid { align-items: stretch; }
+.dx-match-grid > .mrow { display: flex; flex-direction: column; }
+.dx-match-grid > .mrow > .mpred { margin-top: auto; padding-top: 10px; }

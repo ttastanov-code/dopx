@@ -2,60 +2,16 @@
 Компактный виджет прогноза для карточки в списке матчей (POST с compact=1).
 Контекст: match, counts, my_prediction (+ just_predicted, challenge_url, next_match после клика). Клик не всплывает к ссылке карточки.
 {% endcomment %}
-<div id="prediction-widget-{{ match.id }}"
-     class="grid grid-cols-3 gap-1 sm:gap-1.5 mt-2 pt-2 border-t border-base-300"
-     onclick="event.stopPropagation()">
-    <button type="button"
-            {% if match.is_prediction_open %}
-            hx-post="{% url 'predictions:predict' match.id %}"
-            hx-vals='{"choice": "1", "compact": "1"}'
-            hx-target="#prediction-widget-{{ match.id }}"
-            hx-swap="outerHTML"
-            {% else %}
-            disabled
-            {% endif %}
-            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
-                   {% if match.final_result == '1' %}border-success bg-success/10
-                   {% elif my_prediction.choice == '1' %}border-primary bg-primary/10
-                   {% else %}border-base-300{% endif %}">
-        <span class="text-[9px] font-semibold opacity-60 break-words max-w-full">П1</span>
-        <span class="text-xs font-bold">{% if counts.total %}{{ counts.home_pct }}%{% elif my_prediction.choice == '1' %}<span class="text-primary"><i class="ti ti-check"></i> ваш</span>{% else %}—{% endif %}</span>
-    </button>
-    <button type="button"
-            {% if match.is_prediction_open %}
-            hx-post="{% url 'predictions:predict' match.id %}"
-            hx-vals='{"choice": "X", "compact": "1"}'
-            hx-target="#prediction-widget-{{ match.id }}"
-            hx-swap="outerHTML"
-            {% else %}
-            disabled
-            {% endif %}
-            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
-                   {% if match.final_result == 'X' %}border-success bg-success/10
-                   {% elif my_prediction.choice == 'X' %}border-primary bg-primary/10
-                   {% else %}border-base-300{% endif %}">
-        <span class="text-[9px] font-semibold opacity-60">Х</span>
-        <span class="text-xs font-bold">{% if counts.total %}{{ counts.draw_pct }}%{% elif my_prediction.choice == 'X' %}<span class="text-primary"><i class="ti ti-check"></i> ваш</span>{% else %}—{% endif %}</span>
-    </button>
-    <button type="button"
-            {% if match.is_prediction_open %}
-            hx-post="{% url 'predictions:predict' match.id %}"
-            hx-vals='{"choice": "2", "compact": "1"}'
-            hx-target="#prediction-widget-{{ match.id }}"
-            hx-swap="outerHTML"
-            {% else %}
-            disabled
-            {% endif %}
-            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
-                   {% if match.final_result == '2' %}border-success bg-success/10
-                   {% elif my_prediction.choice == '2' %}border-primary bg-primary/10
-                   {% else %}border-base-300{% endif %}">
-        <span class="text-[9px] font-semibold opacity-60 break-words max-w-full">П2</span>
-        <span class="text-xs font-bold">{% if counts.total %}{{ counts.away_pct }}%{% elif my_prediction.choice == '2' %}<span class="text-primary"><i class="ti ti-check"></i> ваш</span>{% else %}—{% endif %}</span>
-    </button>
+<div id="prediction-widget-{{ match.id }}" class="mpred" onclick="event.stopPropagation()">
+    {# Переключатель П1 · X · П2: доля голосов (или «—»), ваш выбор подсвечен, сбывшийся исход — зелёным. Стили — css/match-card.css. #}
+    <div class="mpred__seg" role="group" aria-label="Прогноз на исход">
+        {% include "predictions/_prediction_seg_btn.html" with choice="1" label="П1" pct=counts.home_pct %}
+    {% include "predictions/_prediction_seg_btn.html" with choice="X" label="X" pct=counts.draw_pct %}
+    {% include "predictions/_prediction_seg_btn.html" with choice="2" label="П2" pct=counts.away_pct %}
+    </div>
     {% if just_predicted %}
     {# Только что сделан прогноз: вызов другу и переход к следующему матчу без прогноза. #}
-    <div class="col-span-3 dx-predicted-row">
+    <div class="dx-predicted-row">
         <span class="dx-predicted-row__ok"><i class="ti ti-check"></i> Принято</span>
         {% if challenge_url %}
         <button type="button" class="dx-predicted-row__btn" data-share data-share-url="{{ challenge_url }}"

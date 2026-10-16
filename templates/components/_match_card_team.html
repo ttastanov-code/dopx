@@ -1,0 +1,6 @@
+{# Строка команды в карточке матча (_match_card.html): герб, название, счёт. Контекст: t, sc, other, match. #}
+<div class="mrow__t{% if match.status == 'finished' and sc > other %} is-winner{% elif match.status == 'finished' and sc < other %} is-loser{% endif %}">
+    {% if t.logo_display %}<img src="{{ t.logo_display }}" alt="" class="mrow__crest">{% else %}<span class="mrow__crest-fallback">{{ t.name|first|upper }}</span>{% endif %}
+    <span class="mrow__team-name">{{ t.name }}</span>
+    {% if match.status == "finished" or match.status == "live" %}<span class="mrow__score" data-live-pop>{{ sc|default_if_none:"0" }}</span>{% endif %}
+</div>

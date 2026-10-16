@@ -113,7 +113,8 @@
                     <i class="ti ti-chevron-right"></i>
                 </a>
             </div>
-            <div class="space-y-2 md:space-y-3">
+            {# На ПК — две колонки компактных карточек. #}
+            <div class="dx-match-grid">
                 {% for match in upcoming_matches %}
                 {% include 'components/_match_card.html' with match=match %}
                 {% empty %}
@@ -137,7 +138,7 @@
                     <i class="ti ti-chevron-right"></i>
                 </a>
             </div>
-            <div class="space-y-2 md:space-y-3">
+            <div class="dx-match-grid">
                 {% for match in recent_matches %}
                 {% include 'components/_match_card.html' with match=match %}
                 {% empty %}
