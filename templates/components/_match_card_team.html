@@ -1,0 +1,7 @@
+{% load match_extras %}
+{# Команда в строке матча (_match_card.html): герб, название, короткая форма до игры, счёт. Контекст: t, sc, other, form, match. #}
+<span class="mx__t{% if match.status == 'finished' and sc > other %} is-win{% elif match.status == 'finished' and sc < other %} is-lose{% endif %}">
+    {% if t.logo_display %}<img class="mx__logo" src="{{ t.logo_display }}" alt="">{% else %}<span class="mx__logo mx__logo--none">{{ t.name|first|upper }}</span>{% endif %}
+    <span class="mx__name">{{ t.name }}{% if form and match.status != 'finished' %}<small class="mx__form{% if 'Не побеждает' in form %} is-down{% else %} is-up{% endif %}">{{ form|form_short }}</small>{% endif %}</span>
+    {% if match.status == 'finished' or match.status == 'live' %}<span class="mx__score" data-live-pop>{{ sc|default_if_none:"0" }}</span>{% endif %}
+</span>

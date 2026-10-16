@@ -1,0 +1,6 @@
+{% load ui_extras %}
+{# Заголовок прогноза: вопрос слева, число прогнозов справа (_pick.html). #}
+<div class="pick__head">
+    <span class="pick__q">{% if match.final_result %}Прогноз болельщиков{% elif match.is_prediction_open %}Кто победит?{% else %}Прогноз болельщиков{% endif %}</span>
+    {% if counts.total %}<span class="pick__total">{{ counts.total }} {{ counts.total|ru_plural:"прогноз,прогноза,прогнозов" }}</span>{% endif %}
+</div>

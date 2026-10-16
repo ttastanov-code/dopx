@@ -103,9 +103,9 @@ class ReactionWidgetTests(_Base):
         response = self.client.post(reverse("matches:react", args=[match.id]), {"reaction": "upset"})
         html = response.content.decode()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("dx-react__btn--warning is-selected", html)
-        self.assertIn("--fill: 100%", html)
-        self.assertIn("<b>100%</b>", html)
+        self.assertIn("mxr__btn is-on", html)
+        self.assertIn('title="Неожиданно"', html)
+        self.assertIn("100%", html)
 
 
 class MatchListTabsTests(_Base):

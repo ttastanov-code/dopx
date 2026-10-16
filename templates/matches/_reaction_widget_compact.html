@@ -1,43 +1,12 @@
 {% comment %}
-Реакция на матч: Матч тура / Неожиданно / Скучно (hx-swap=outerHTML). Стили — css/ui.css (dx-react).
-Контекст: match, counts, my_reaction. Клик не всплывает к ссылке карточки.
-Проценты и заливка — только когда реакции уже есть.
+Реакция на сыгранный матч в строке списка: три значка с долями (Матч тура / Неожиданно / Скучный), hx-swap=outerHTML.
+Контекст: match, counts, my_reaction. Клик не всплывает к ссылке строки. Стили — css/match-card.css (mxr).
 {% endcomment %}
-<div id="reaction-widget-{{ match.id }}" class="dx-react" onclick="event.stopPropagation()">
-    <span class="dx-react__label">{% if counts.total %}Мнение болельщиков{% else %}Как вам матч?{% endif %}</span>
-    <div class="dx-react__options">
-    <button type="button"
-            hx-post="{% url 'matches:react' match.id %}"
-            hx-vals='{"reaction": "match_of_round"}'
-            hx-target="#reaction-widget-{{ match.id }}"
-            hx-swap="outerHTML"
-            title="Один из лучших матчей тура"
-            class="dx-react__btn dx-react__btn--success{% if my_reaction.reaction == 'match_of_round' %} is-selected{% endif %}"
-            {% if counts.total %}style="--fill: {{ counts.match_of_round_pct }}%"{% endif %}
-            {% if my_reaction.reaction == 'match_of_round' %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
-        <i class="ti ti-trophy"></i><span>Матч тура</span>{% if counts.total %}<b>{{ counts.match_of_round_pct }}%</b>{% endif %}
-    </button>
-    <button type="button"
-            hx-post="{% url 'matches:react' match.id %}"
-            hx-vals='{"reaction": "upset"}'
-            hx-target="#reaction-widget-{{ match.id }}"
-            hx-swap="outerHTML"
-            title="Результат стал неожиданностью"
-            class="dx-react__btn dx-react__btn--warning{% if my_reaction.reaction == 'upset' %} is-selected{% endif %}"
-            {% if counts.total %}style="--fill: {{ counts.upset_pct }}%"{% endif %}
-            {% if my_reaction.reaction == 'upset' %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
-        <i class="ti ti-bolt"></i><span>Неожиданно</span>{% if counts.total %}<b>{{ counts.upset_pct }}%</b>{% endif %}
-    </button>
-    <button type="button"
-            hx-post="{% url 'matches:react' match.id %}"
-            hx-vals='{"reaction": "boring"}'
-            hx-target="#reaction-widget-{{ match.id }}"
-            hx-swap="outerHTML"
-            title="Матч получился скучным"
-            class="dx-react__btn dx-react__btn--neutral{% if my_reaction.reaction == 'boring' %} is-selected{% endif %}"
-            {% if counts.total %}style="--fill: {{ counts.boring_pct }}%"{% endif %}
-            {% if my_reaction.reaction == 'boring' %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
-        <i class="ti ti-moon"></i><span>Скучный</span>{% if counts.total %}<b>{{ counts.boring_pct }}%</b>{% endif %}
-    </button>
-    </div>
-</div>
+<span id="reaction-widget-{{ match.id }}" class="mxr" onclick="event.preventDefault(); event.stopPropagation()">
+    <button type="button" hx-post="{% url 'matches:react' match.id %}" hx-vals='{"reaction": "match_of_round"}' hx-target="#reaction-widget-{{ match.id }}" hx-swap="outerHTML"
+            class="mxr__btn{% if my_reaction.reaction == 'match_of_round' %} is-on{% endif %}" title="Матч тура" aria-pressed="{% if my_reaction.reaction == 'match_of_round' %}true{% else %}false{% endif %}"><i class="ti ti-trophy"></i>{% if counts.total %}{{ counts.match_of_round_pct }}%{% endif %}</button>
+    <button type="button" hx-post="{% url 'matches:react' match.id %}" hx-vals='{"reaction": "upset"}' hx-target="#reaction-widget-{{ match.id }}" hx-swap="outerHTML"
+            class="mxr__btn{% if my_reaction.reaction == 'upset' %} is-on{% endif %}" title="Неожиданно" aria-pressed="{% if my_reaction.reaction == 'upset' %}true{% else %}false{% endif %}"><i class="ti ti-bolt"></i>{% if counts.total %}{{ counts.upset_pct }}%{% endif %}</button>
+    <button type="button" hx-post="{% url 'matches:react' match.id %}" hx-vals='{"reaction": "boring"}' hx-target="#reaction-widget-{{ match.id }}" hx-swap="outerHTML"
+            class="mxr__btn{% if my_reaction.reaction == 'boring' %} is-on{% endif %}" title="Скучный" aria-pressed="{% if my_reaction.reaction == 'boring' %}true{% else %}false{% endif %}"><i class="ti ti-moon"></i>{% if counts.total %}{{ counts.boring_pct }}%{% endif %}</button>
+</span>

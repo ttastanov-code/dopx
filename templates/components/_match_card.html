@@ -1,8 +1,9 @@
 {% load match_extras ui_extras %}
 {% comment %}
-Строка матча в списке (главная, /matches/): хозяева — время или счёт — гости; под ней тихие строки подробностей
-(интрига, форма, очные / момент, герой, сенсация, таблица, ДНК), пометка о вашей оценке, прогноз или реакции.
-Список-обёртка — components/_match_list.html, стили — css/match-card.css (mx).
+Строка матча в списке (главная, /matches/), в духе Apple Sports / FotMob:
+слева команды друг под другом (герб, название, короткая форма, счёт), справа колонка — время / минута / статус
+и прогноз 1·Х·2 или «Оценить»; снизу одна тихая строка фишек (интрига, очные, момент, игрок матча, сенсация, ДНК, реакции).
+Список — components/_match_list.html, стили — css/match-card.css (mx).
 Live-строка обновляет себя (matches:card), data-background-poll — без глобального лоадера.
 {% endcomment %}
 <a href="{% url 'matches:detail' match.id %}"
@@ -13,60 +14,39 @@ Live-строка обновляет себя (matches:card), data-background-po
 {% elif match.poll_wake_at %}
    data-background-poll hx-get="{% url 'matches:card' match.id %}" hx-trigger="dopx:wake" hx-swap="outerHTML" data-wake-at="{{ match.poll_wake_at|date:'c' }}"
 {% endif %}{% endwith %}>
-    <span class="mx__team mx__team--home{% if match.status == 'finished' and match.home_score > match.away_score %} is-win{% elif match.status == 'finished' and match.home_score < match.away_score %} is-lose{% endif %}">
-        <span class="mx__name">{{ match.home_team.name }}</span>
-        {% if match.home_team.logo_display %}<img class="mx__logo" src="{{ match.home_team.logo_display }}" alt="">{% else %}<span class="mx__logo mx__logo--none">{{ match.home_team.name|first|upper }}</span>{% endif %}
+    <span class="mx__teams">
+        {% include "components/_match_card_team.html" with t=match.home_team sc=match.home_score other=match.away_score form=match.card_home_form_text %}
+        {% include "components/_match_card_team.html" with t=match.away_team sc=match.away_score other=match.home_score form=match.card_away_form_text %}
     </span>
 
-    <span class="mx__mid" data-live-pop>
-        {% if match.status == 'finished' or match.status == 'live' %}
-        <span class="mx__score">{{ match.home_score|default_if_none:"0" }}<i>–</i>{{ match.away_score|default_if_none:"0" }}</span>
-        {% if match.status == 'live' %}<span class="mx__live">{% include 'components/_live_clock.html' with match=match fallback="в эфире" %}</span>{% endif %}
+    <span class="mx__side">
+        {% if match.status == 'live' %}<span class="mx__live"><i class="mx__dot"></i>{% include 'components/_live_clock.html' with match=match fallback="в эфире" %}</span>
+        {% elif match.status == 'finished' %}
+            {% if match.user_has_evaluated %}<span class="mx__done"><i class="ti ti-circle-check"></i>Оценено</span>
+            {% elif match.is_voting_open and user.is_authenticated %}<span class="mx__rate" role="link" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{% url 'evaluations:context' match.id %}'"><i class="ti ti-dopx-rate"></i>Оценить</span>
+            {% else %}<span class="mx__state">завершён</span>{% endif %}
         {% elif match.status == 'postponed' %}<span class="mx__state">перенесён</span>
         {% elif match.status == 'cancelled' %}<span class="mx__state">отменён</span>
         {% elif match.kickoff_known %}<span class="mx__time">{{ match.start_time|time:"H:i" }}</span>
-        {% else %}<span class="mx__state">время уточняется</span>{% endif %}
+        {% else %}<span class="mx__state">время уточнят</span>{% endif %}
+        {% if match.list_prediction_counts %}{% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}{% endif %}
     </span>
 
-    <span class="mx__team mx__team--away{% if match.status == 'finished' and match.away_score > match.home_score %} is-win{% elif match.status == 'finished' and match.away_score < match.home_score %} is-lose{% endif %}">
-        {% if match.away_team.logo_display %}<img class="mx__logo" src="{{ match.away_team.logo_display }}" alt="">{% else %}<span class="mx__logo mx__logo--none">{{ match.away_team.name|first|upper }}</span>{% endif %}
-        <span class="mx__name">{{ match.away_team.name }}</span>
-    </span>
-
-    {# Подробности матча — тихими строками под табло. До игры: интрига, форма, очные. После: момент, герой, сенсация, таблица, ДНК, голоса. #}
-    {% if match.status == 'scheduled' or match.status == 'live' %}
-    {% if match.card_intrigue or match.card_followed_teams or match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
-    <span class="mx__info">
-        {% if match.card_intrigue or match.card_followed_teams %}<span class="mx__line mx__line--accent">{% if match.card_intrigue %}<i class="ti ti-bolt"></i>{{ match.card_intrigue }}{% endif %}{% if match.card_intrigue and match.card_followed_teams %}<em>·</em>{% endif %}{% if match.card_followed_teams %}<i class="ti ti-heart"></i>Ваша команда{% endif %}</span>{% endif %}
-        {% if match.card_home_form_text or match.card_away_form_text %}<span class="mx__line"><i class="ti ti-chart-line"></i>{% if match.card_home_form_text %}<b>{{ match.home_team.name }}</b> {{ match.card_home_form_text|lower }}{% endif %}{% if match.card_home_form_text and match.card_away_form_text %}<em>·</em>{% endif %}{% if match.card_away_form_text %}<b>{{ match.away_team.name }}</b> {{ match.card_away_form_text|lower }}{% endif %}</span>{% endif %}
-        {% if match.card_h2h %}<span class="mx__line" title="Последние {{ match.card_h2h.count }} очных встреч"><i class="ti ti-history"></i>Очные встречи: <b>{{ match.home_team.name }} {{ match.card_h2h.home_wins }}</b><em>·</em>ничьи {{ match.card_h2h.draws }}<em>·</em><b>{{ match.away_team.name }} {{ match.card_h2h.away_wins }}</b></span>{% endif %}
-    </span>
-    {% endif %}
-    {% elif match.status == 'finished' %}
-    {% if match.card_key_moment or match.card_hero or match.card_sensation or match.card_table_impact or match.card_dna_traits or match.card_reaction_badge %}
-    <span class="mx__info">
-        {% if match.card_key_moment %}<span class="mx__line"><i class="ti ti-bolt"></i>{{ match.card_key_moment }}</span>{% endif %}
-        {% if match.card_hero %}<span class="mx__line mx__line--hero" title="Лучший по оценкам болельщиков DOPX">{% if match.card_hero.player.photo_display %}<img src="{{ match.card_hero.player.photo_display }}" alt="">{% else %}<i class="ti ti-medal"></i>{% endif %}Игрок матча: <b>{{ match.card_hero.player.full_name }}</b> {{ match.card_hero.score|floatformat:1 }}</span>{% endif %}
-        {% if match.card_reaction_badge %}<span class="mx__line mx__line--accent"><i class="ti ti-trophy"></i>{{ match.card_reaction_badge }}</span>{% endif %}
-        {% if match.card_sensation %}<span class="mx__line"><i class="ti ti-alert-triangle"></i>{% if match.card_sensation_source == 'predictions' %}Сенсация: {{ match.card_sensation }}% прогнозов было за другой исход{% else %}Сенсация: {{ match.card_sensation }}% болельщиков отметили «Неожиданно»{% endif %}</span>{% endif %}
-        {% if match.card_table_impact %}<span class="mx__line"><i class="ti ti-arrows-sort"></i>{{ match.card_table_impact }}</span>{% endif %}
-        {% if match.card_dna_traits %}<span class="mx__line" title="ДНК матча по оценкам болельщиков"><i class="ti ti-dna-2"></i>{{ match.card_dna_traits|join:" · " }}</span>{% endif %}
+    {# Фишки матча — одной тихой строкой. #}
+    {% if match.card_intrigue or match.card_followed_teams or match.card_h2h or match.card_key_moment or match.card_hero or match.card_sensation or match.card_table_impact or match.card_dna_traits or match.card_reaction_counts and match.status == 'finished' %}
+    <span class="mx__foot">
+        {% if match.status != 'finished' %}
+            {% if match.card_intrigue %}<span class="mx__chip mx__chip--hot"><i class="ti ti-bolt"></i>{{ match.card_intrigue }}</span>{% endif %}
+            {% if match.card_followed_teams %}<span class="mx__chip mx__chip--hot"><i class="ti ti-heart"></i>Ваша команда</span>{% endif %}
+            {% if match.card_h2h %}<span class="mx__chip" title="Очные встречи за последние {{ match.card_h2h.count }} матчей: победы {{ match.home_team.name }} · ничьи · победы {{ match.away_team.name }}"><i class="ti ti-history"></i>Очные {{ match.card_h2h.home_wins }}–{{ match.card_h2h.draws }}–{{ match.card_h2h.away_wins }}</span>{% endif %}
+        {% else %}
+            {% if match.card_key_moment %}<span class="mx__chip"><i class="ti ti-bolt"></i>{{ match.card_key_moment }}</span>{% endif %}
+            {% if match.card_hero %}<span class="mx__chip" title="Лучший по оценкам болельщиков DOPX"><i class="ti ti-medal"></i>{{ match.card_hero.player.full_name }} <b>{{ match.card_hero.score|floatformat:1 }}</b></span>{% endif %}
+            {% if match.card_sensation %}<span class="mx__chip mx__chip--hot" title="{% if match.card_sensation_source == 'predictions' %}{{ match.card_sensation }}% прогнозов было за другой исход{% else %}{{ match.card_sensation }}% болельщиков отметили «Неожиданно»{% endif %}"><i class="ti ti-alert-triangle"></i>Сенсация {{ match.card_sensation }}%</span>{% endif %}
+            {% if match.card_table_impact %}<span class="mx__chip"><i class="ti ti-arrows-sort"></i>{{ match.card_table_impact }}</span>{% endif %}
+            {% if match.card_dna_traits %}<span class="mx__chip" title="ДНК матча по оценкам болельщиков"><i class="ti ti-dna-2"></i>{{ match.card_dna_traits|join:", "|lower }}</span>{% endif %}
+            {% if match.card_reaction_counts %}{% include 'matches/_reaction_widget_compact.html' with match=match counts=match.card_reaction_counts my_reaction=match.card_my_reaction %}{% endif %}
+        {% endif %}
     </span>
     {% endif %}
-    {% endif %}
-
-    {# Одна пометка о вашем состоянии — только если она есть. #}
-    {% if match.status == 'finished' and match.user_has_evaluated %}
-    <span class="mx__note mx__note--done"><i class="ti ti-check"></i>Вы оценили</span>
-    {% elif match.status == 'finished' and match.is_voting_open and user.is_authenticated %}
-    <span class="mx__note mx__note--cta" role="link" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{% url 'evaluations:context' match.id %}'"><i class="ti ti-dopx-rate"></i>Оценить матч</span>
-    {% endif %}
-
-    {% if match.list_prediction_counts %}
-    {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
-    {% endif %}
-    {% if match.status == 'finished' and match.card_reaction_counts %}
-    {% include 'matches/_reaction_widget_compact.html' with match=match counts=match.card_reaction_counts my_reaction=match.card_my_reaction %}
-    {% endif %}
-    {% if match.aggregate.total_votes %}<span class="mx__votes"><i class="ti ti-users"></i>{{ match.aggregate.total_votes }} {{ match.aggregate.total_votes|ru_plural:"оценка,оценки,оценок" }}</span>{% endif %}
 </a>

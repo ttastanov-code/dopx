@@ -1,0 +1,6 @@
+{# Кнопка прогноза в строке матча (_prediction_widget_compact.html). #}
+<button type="button"
+        {% if match.is_prediction_open %}hx-post="{% url 'predictions:predict' match.id %}" hx-vals='{"choice": "{{ choice }}", "compact": "1"}' hx-target="#prediction-widget-{{ match.id }}" hx-swap="outerHTML"{% else %}disabled{% endif %}
+        class="mxp__btn{% if match.final_result == choice %} is-result{% elif my_prediction.choice == choice %} is-mine{% endif %}"
+        title="{% if choice == 'X' %}Ничья{% else %}Победа {{ name }}{% endif %}{% if counts.total %}: {{ pct }}%{% endif %}"
+        aria-pressed="{% if my_prediction.choice == choice %}true{% else %}false{% endif %}">{{ label }}</button>

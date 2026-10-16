@@ -87,3 +87,18 @@ def common_tour(matches):
     """Тур, если он общий у всех матчей дня; разные туры — пусто (в заголовке дня тур не пишем)."""
     tours = {getattr(m, "tour", None) for m in matches}
     return tours.pop() if len(tours) == 1 else None
+
+
+@register.filter
+def form_short(text):
+    """Короткая форма команды для строки матча: «3 без побед», «выиграла последний», «4 победы подряд»."""
+    import re
+
+    if not text:
+        return ""
+    if text.startswith("Победа в последнем"):
+        return "выиграла последний"
+    m = re.match(r"Не побеждает (\d+)", text)
+    if m:
+        return f"{m.group(1)} без побед"
+    return text[:1].lower() + text[1:]

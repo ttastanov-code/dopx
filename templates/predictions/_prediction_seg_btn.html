@@ -1,8 +1,0 @@
-{# Кнопка переключателя прогноза (_prediction_widget_compact.html). Контекст: match, counts, my_prediction, choice, label, pct. #}
-<button type="button"
-        {% if match.is_prediction_open %}hx-post="{% url 'predictions:predict' match.id %}" hx-vals='{"choice": "{{ choice }}", "compact": "1"}' hx-target="#prediction-widget-{{ match.id }}" hx-swap="outerHTML"{% else %}disabled{% endif %}
-        class="mpred__opt{% if match.final_result == choice %} is-result{% elif my_prediction.choice == choice %} is-mine{% endif %}"
-        {% if my_prediction.choice == choice %}aria-pressed="true"{% endif %}>
-    <span class="mpred__label">{% if my_prediction.choice == choice %}<i class="ti ti-check"></i>{% endif %}{{ label }}</span>
-    <span class="mpred__pct">{% if counts.total %}{{ pct }}%{% else %}—{% endif %}</span>
-</button>

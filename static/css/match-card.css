@@ -1,123 +1,145 @@
 /* static/css/match-card.css
-   Список матчей (components/_match_list.html, _match_card.html): один спокойный блок, строки через тонкие разделители,
-   в строке хозяева — время или счёт — гости; под счётом одна пометка о вашем состоянии. Цвета — переменные темы. */
+   Список матчей (components/_match_list.html → _match_card.html), в духе Apple Sports / FotMob:
+   слева команды друг под другом со счётом, справа колонка времени и прогноза, снизу строка фишек.
+   Плюс опрос-прогноз на странице матча (predictions/_pick.html). Цвета — переменные темы. */
 
-.mlist {
-    background: var(--color-base-100);
-    border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
-    border-radius: 20px;
-    overflow: hidden;
-}
-.mlist__day {
-    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
-    padding: 14px 18px 8px;
-}
+/* ---- Блок списка и заголовки дней ---- */
+.mlist { background: var(--color-base-100); border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent); border-radius: 20px; overflow: hidden; }
+.mlist__day { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; padding: 14px 18px 6px;
+    font-size: .8125rem; }
 .mlist__day:not(:first-child) { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); padding-top: 16px; }
-.mlist__day-label { font-size: .875rem; font-weight: 700; }
-.mlist__day-meta { font-size: .8125rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.mlist__day-label { font-weight: 700; }
+.mlist__day-meta { color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 
-/* Строка матча. */
-.mx {
-    display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(0, 1fr); align-items: center; column-gap: 12px;
-    padding: 14px 18px; position: relative;
-    transition: background-color .15s ease;
-}
+/* ---- Строка матча ---- */
+.mx { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 6.75rem; column-gap: 16px; row-gap: 10px; padding: 14px 18px; transition: background-color .15s ease; }
 .mx + .mx::before { content: ""; position: absolute; top: 0; left: 18px; right: 18px; height: 1px; background: color-mix(in oklab, var(--color-base-content) 6%, transparent); }
-.mx:hover { background: color-mix(in oklab, var(--color-base-content) 3%, transparent); }
+.mx:hover { background: color-mix(in oklab, var(--color-base-content) 2.5%, transparent); }
 .mx:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 
-.mx__team { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.mx__team--home { justify-content: flex-end; text-align: right; }
-.mx__name { font-size: .9375rem; font-weight: 600; line-height: 1.25; color: var(--color-base-content); overflow-wrap: anywhere; }
-.mx__logo { width: 28px; height: 28px; flex: none; object-fit: contain; }
-.mx__logo--none { display: grid; place-items: center; border-radius: 50%; font-size: .75rem; font-weight: 800;
+.mx__teams { display: grid; gap: 8px; min-width: 0; align-self: center; }
+.mx__t { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.mx__logo { width: 24px; height: 24px; object-fit: contain; }
+.mx__logo--none { display: grid; place-items: center; border-radius: 50%; font-size: .7rem; font-weight: 800;
     background: color-mix(in oklab, var(--color-base-content) 7%, transparent); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
-.mx__team.is-lose .mx__name { color: color-mix(in oklab, var(--color-base-content) 48%, transparent); font-weight: 500; }
-.mx__team.is-win .mx__name { font-weight: 700; }
-
-.mx__mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; }
-.mx__time { font-size: .9375rem; font-weight: 700; font-variant-numeric: tabular-nums; padding: 4px 10px; border-radius: 999px;
-    background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
-.mx__score { font-size: 1.125rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
-.mx__score i { font-style: normal; margin: 0 .3em; color: color-mix(in oklab, var(--color-base-content) 35%, transparent); font-weight: 600; }
-.mx__live { font-size: .75rem; font-weight: 700; color: var(--color-error); }
+.mx__name { min-width: 0; font-size: .9375rem; font-weight: 600; line-height: 1.25; color: var(--color-base-content); overflow-wrap: anywhere; }
+.mx__form { margin-left: 8px; font-size: .75rem; font-weight: 500; white-space: nowrap; color: color-mix(in oklab, var(--color-base-content) 48%, transparent); }
+.mx__form::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; vertical-align: 1px; background: currentColor; }
+.mx__form.is-up::before { background: var(--color-success); }
+.mx__form.is-down::before { background: var(--color-error); }
+.mx__score { min-width: 1.5rem; text-align: right; font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mx__t.is-lose .mx__name, .mx__t.is-lose .mx__score { color: color-mix(in oklab, var(--color-base-content) 45%, transparent); font-weight: 500; }
 .mx--live .mx__score { color: var(--color-error); }
-.mx__state { font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); line-height: 1.2; }
 
-/* Пометка под строкой — по центру, тихо. */
-.mx__note { grid-column: 1 / -1; justify-self: center; display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
-    font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); text-align: center; }
-.mx__note .ti { font-size: .85rem; }
-.mx__note--done { color: var(--color-success); }
-.mx__note--cta { color: var(--color-primary); padding: 5px 12px; border-radius: 999px; background: color-mix(in oklab, var(--color-primary) 10%, transparent); cursor: pointer; }
-.mx__note--cta:hover { background: color-mix(in oklab, var(--color-primary) 16%, transparent); }
+/* Правая колонка: время / статус и прогноз. */
+.mx__side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding-left: 16px;
+    border-left: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.mx__time { font-size: 1.0625rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.mx__state { font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 48%, transparent); text-align: center; }
+.mx__live { display: inline-flex; align-items: center; gap: 5px; font-size: .8125rem; font-weight: 800; color: var(--color-error); }
+.mx__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-error); animation: mrow-pulse 1.4s ease-in-out infinite; }
+.mx__done { display: inline-flex; align-items: center; gap: 4px; font-size: .75rem; font-weight: 700; color: var(--color-success); }
+.mx__rate { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 999px; font-size: .78rem; font-weight: 700; cursor: pointer;
+    color: var(--color-primary-content); background: var(--color-primary); }
+.mx__rate:hover { filter: brightness(1.08); }
+
+/* Прогноз 1 · Х · 2 в колонке. */
+.mxp { display: grid; gap: 3px; }
+.mxp__btns { display: grid; grid-template-columns: repeat(3, 28px); gap: 4px; }
+.mxp__btn { height: 28px; border-radius: 8px; border: 0; font-size: .75rem; font-weight: 750; cursor: pointer;
+    color: color-mix(in oklab, var(--color-base-content) 65%, transparent); background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    transition: background .15s ease, color .15s ease; }
+.mxp__btn:not(:disabled):hover { background: color-mix(in oklab, var(--color-primary) 14%, transparent); color: var(--color-primary); }
+.mxp__btn:disabled { cursor: default; }
+.mxp__btn.is-mine { background: var(--color-primary); color: var(--color-primary-content); }
+.mxp__btn.is-result { background: color-mix(in oklab, var(--color-success) 18%, transparent); color: var(--color-success); }
+.mxp__pcts { display: grid; grid-template-columns: repeat(3, 28px); gap: 4px; text-align: center; font-size: .625rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+.mxp__pcts span::after { content: "%"; }
+
+/* Строка фишек. */
+.mx__foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: .75rem; line-height: 1.35;
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.mx__chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.mx__chip .ti { font-size: .85rem; opacity: .8; }
+.mx__chip b { color: var(--color-base-content); font-weight: 700; }
+.mx__chip--hot { color: var(--color-secondary); font-weight: 650; }
+.mxr { display: inline-flex; gap: 4px; margin-left: auto; }
+.mxr__btn { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 8px; border-radius: 999px; border: 0; cursor: pointer; font-size: .6875rem; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+.mxr__btn .ti { font-size: .8rem; }
+.mxr__btn:hover { color: var(--color-base-content); }
+.mxr__btn.is-on { color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 12%, transparent); }
 
 @media (max-width: 480px) {
-    .mx { grid-template-columns: minmax(0, 1fr) 4.5rem minmax(0, 1fr); column-gap: 8px; padding: 13px 14px; }
+    .mx { grid-template-columns: minmax(0, 1fr) 6.25rem; column-gap: 12px; padding: 13px 14px; }
     .mx + .mx::before { left: 14px; right: 14px; }
+    .mlist__day { padding: 12px 14px 4px; }
+    .mx__side { padding-left: 12px; }
     .mx__name { font-size: .875rem; }
-    .mx__logo { width: 24px; height: 24px; }
-    .mx__team { gap: 8px; }
-    .mlist__day { padding: 12px 14px 6px; }
+    .mx__form { display: block; margin: 2px 0 0; }
+    .mxr { margin-left: 0; }
 }
 
 /* Live-точка в заголовке «Сейчас в игре» (главная). */
 .mrow__live-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--color-error); animation: mrow-pulse 1.4s ease-in-out infinite; display: inline-block; }
 @keyframes mrow-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .mrow__live-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .mrow__live-dot, .mx__dot { animation: none; } }
 
-/* Подробности под строкой: тихие строки текста с иконками, по центру. */
-.mx__info { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 10px; text-align: center; }
-.mx__line { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; max-width: 100%;
-    font-size: .78rem; line-height: 1.35; color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
-.mx__line .ti { font-size: .9rem; opacity: .75; }
-.mx__line b { font-weight: 650; color: color-mix(in oklab, var(--color-base-content) 85%, transparent); }
-.mx__line em { font-style: normal; opacity: .45; margin: 0 2px; }
-.mx__line--accent { color: var(--color-secondary); font-weight: 600; }
-.mx__line--accent .ti { opacity: 1; }
-.mx__line--hero img { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
-.mx__votes { grid-column: 1 / -1; justify-self: center; display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
-    font-size: .72rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+/* ---- Прогноз на странице матча ---- */
+.pick__head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .6rem; }
+.pick__q { font-size: .875rem; font-weight: 700; color: var(--color-base-content); }
+.pick__total { font-size: .75rem; font-weight: 500; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); font-variant-numeric: tabular-nums; }
 
-/* Прогноз в строке: три лёгкие кнопки. */
-.mx .mpred { grid-column: 1 / -1; width: 100%; max-width: 26rem; justify-self: center; margin-top: 12px; }
-.mpred__seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.mpred__opt { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 2.3rem; padding: 0 .5rem; border-radius: 999px;
-    font-size: .8125rem; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 72%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-base-content) 10%, transparent); transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
-.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-content) 4%, transparent); }
-.mpred__opt:disabled { cursor: default; }
-.mpred__label { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }
-.mpred__label .ti { font-size: .8rem; }
-.mpred__pct { font-weight: 600; opacity: .6; }
-.mpred__opt.is-mine { color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 9%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 50%, transparent); }
-.mpred__opt.is-mine .mpred__pct { opacity: .9; }
-.mpred__opt.is-result { color: var(--color-success); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-success) 50%, transparent); }
-.mx .dx-predicted-row { margin-top: 8px; }
-
-/* Реакции в строке сыгранного матча — та же лёгкая подача. */
-.mx .dx-react { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 30rem; margin-top: 12px; padding: 0; border: 0; background: none; }
-.mx .dx-react__label { display: block; text-align: center; font-size: .72rem; font-weight: 600; margin-bottom: 6px; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
-.mx .dx-react__options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.mx .dx-react__btn { min-height: 2.3rem; border-radius: 999px; font-size: .78rem; padding: 0 .5rem; flex-direction: row; gap: 5px; }
-.mx .dx-react__btn { flex-direction: row !important; flex-wrap: wrap; justify-content: center; text-align: center; line-height: 1.15; padding: .35rem .5rem !important; }
-.mx .dx-react__btn .ti { font-size: .85rem; }
-@media (max-width: 480px) { .mx .dx-react__btn { font-size: .72rem; gap: 3px; } .mx .dx-react__btn .ti { display: none; } }
-
-/* Больше воздуха: просторнее строки, подробности и кнопки отделены от табло, разделители с отступом. */
-.mx { padding: 20px 22px; }
-.mx + .mx::before { left: 22px; right: 22px; }
-.mlist__day { padding: 18px 22px 4px; }
-.mlist__day:not(:first-child) { padding-top: 22px; }
-.mx__info { gap: 6px; margin-top: 14px; }
-.mx__line { font-size: .8rem; }
-.mx .mpred { margin-top: 16px; }
-.mx .dx-react { margin-top: 16px; }
-.mx__note { margin-top: 12px; }
-.mx__votes { margin-top: 10px; }
-@media (max-width: 480px) {
-  .mx { padding: 18px 16px; }
-  .mx + .mx::before { left: 16px; right: 16px; }
-  .mlist__day { padding: 16px 16px 2px; }
-  .mlist__day:not(:first-child) { padding-top: 20px; }
+/* ---- Прогноз на странице матча: опрос из трёх строк ---- */
+.poll { display: grid; gap: 6px; }
+.poll__row {
+    position: relative; overflow: hidden; isolation: isolate; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 3rem; padding: 0 16px; border: 0; border-radius: 14px; text-align: left; cursor: pointer;
+    background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
+    transition: background .15s ease, box-shadow .15s ease;
 }
+.poll__row:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.poll__row:disabled { cursor: default; }
+.poll__row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.poll__fill { position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); z-index: -1; border-radius: inherit;
+    background: color-mix(in oklab, var(--color-base-content) 7%, transparent); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.poll__row.is-mine .poll__fill { background: color-mix(in oklab, var(--color-primary) 16%, transparent); }
+.poll__row.is-result .poll__fill { background: color-mix(in oklab, var(--color-success) 18%, transparent); }
+.poll__row.is-mine { box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 45%, transparent); }
+.poll__lead { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.poll__logo { width: 24px; height: 24px; object-fit: contain; flex: none; }
+.poll__logo--none, .poll__logo--draw { display: inline-grid; place-items: center; border-radius: 50%; font-size: .8rem; font-weight: 800;
+    background: color-mix(in oklab, var(--color-base-content) 9%, transparent); color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }
+.poll__name { font-size: .9375rem; font-weight: 600; color: var(--color-base-content); }
+.poll__tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: .6875rem; font-weight: 700;
+    color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 12%, transparent); }
+.poll__tag--ok { color: var(--color-success); background: color-mix(in oklab, var(--color-success) 14%, transparent); }
+.poll__pct { flex: none; font-size: .9375rem; font-weight: 750; font-variant-numeric: tabular-nums; color: var(--color-base-content); }
+.poll__radio { flex: none; width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-base-content) 25%, transparent); }
+.poll__row:not(:disabled):hover .poll__radio { box-shadow: inset 0 0 0 2px var(--color-primary); }
+@media (max-width: 480px) { .poll__row { padding: 0 12px; } .poll__name { font-size: .875rem; } }
+@media (prefers-reduced-motion: reduce) { .poll__fill { transition: none; } }
+
+
+/* Главное действие на странице матча — обычного размера, по центру. */
+.mh__actions { justify-content: center; }
+.mh__actions > .mh__cta, .mh__actions > .mh__state { flex: 0 1 20rem !important; }
+.pick__head--compact { justify-content: center; gap: .6rem; margin-bottom: .45rem; }
+.pick__head--compact .pick__q { font-size: .78rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }
+@media (max-width: 480px) {
+  .mx__sub--home, .mx__sub--away { padding: 0; justify-content: center; text-align: center; }
+}
+.poll__lead { flex-wrap: nowrap; }
+.poll__name { min-width: 0; overflow-wrap: anywhere; }
+.poll__tag { flex: none; }
+.poll__tag em { font-style: normal; }
+@media (max-width: 480px) {
+  .poll__tag { padding: 0; width: 22px; height: 22px; justify-content: center; }
+  .poll__tag em { display: none; }
+  .poll__tag .ti { font-size: .85rem; }
+}
+.mxp__after { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 4px; font-size: .6875rem; }
+.mxp__ok { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--color-success); }
+.mxp__link { display: inline-flex; align-items: center; gap: 3px; border: 0; background: none; padding: 0; cursor: pointer; font-size: .6875rem; font-weight: 700; color: var(--color-primary); }
+.mxp__link { white-space: nowrap; }

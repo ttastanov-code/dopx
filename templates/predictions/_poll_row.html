@@ -1,0 +1,15 @@
+{# Строка опроса (_pick_body.html). Контекст: match, my_prediction, choice, pct, team (None — ничья), split. #}
+<button type="button"
+        {% if match.is_prediction_open %}hx-post="{% url 'predictions:predict' match.id %}" hx-vals='{"choice": "{{ choice }}"}' hx-target="#prediction-widget-{{ match.id }}" hx-swap="outerHTML"{% else %}disabled{% endif %}
+        class="poll__row{% if my_prediction.choice == choice %} is-mine{% endif %}{% if match.final_result == choice %} is-result{% endif %}"
+        {% if split %}style="--p: {{ pct }}%"{% endif %}
+        aria-pressed="{% if my_prediction.choice == choice %}true{% else %}false{% endif %}">
+    {% if split %}<span class="poll__fill" aria-hidden="true"></span>{% endif %}
+    <span class="poll__lead">
+        {% if team %}{% if team.logo_display %}<img class="poll__logo" src="{{ team.logo_display }}" alt="">{% else %}<span class="poll__logo poll__logo--none">{{ team.name|first|upper }}</span>{% endif %}<span class="poll__name">Победа {{ team.name }}</span>
+        {% else %}<span class="poll__logo poll__logo--draw" aria-hidden="true">=</span><span class="poll__name">Ничья</span>{% endif %}
+        {% if my_prediction.choice == choice %}<span class="poll__tag" title="Ваш прогноз"><i class="ti ti-user-check"></i><em>ваш прогноз</em></span>{% endif %}
+        {% if match.final_result == choice %}<span class="poll__tag poll__tag--ok" title="Исход матча"><i class="ti ti-check"></i><em>исход</em></span>{% endif %}
+    </span>
+    {% if split %}<span class="poll__pct">{{ pct }}%</span>{% elif match.is_prediction_open %}<span class="poll__radio" aria-hidden="true"></span>{% endif %}
+</button>

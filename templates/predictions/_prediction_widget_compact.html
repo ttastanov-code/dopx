@@ -1,29 +1,23 @@
 {% comment %}
-Компактный виджет прогноза для карточки в списке матчей (POST с compact=1).
-Контекст: match, counts, my_prediction (+ just_predicted, challenge_url, next_match после клика). Клик не всплывает к ссылке карточки.
+Прогноз в строке матча (список): кнопки 1 · Х · 2, под ними доли, когда они уже есть. POST с compact=1 возвращает этот же блок.
+Контекст: match, counts, my_prediction. Клик не всплывает к ссылке строки. Стили — css/match-card.css (mxp).
 {% endcomment %}
-<div id="prediction-widget-{{ match.id }}" class="mpred" onclick="event.stopPropagation()">
-    {# Переключатель П1 · X · П2: доля голосов (или «—»), ваш выбор подсвечен, сбывшийся исход — зелёным. Стили — css/match-card.css. #}
-    <div class="mpred__seg" role="group" aria-label="Прогноз на исход">
-        {% include "predictions/_prediction_seg_btn.html" with choice="1" label="П1" pct=counts.home_pct %}
-    {% include "predictions/_prediction_seg_btn.html" with choice="X" label="X" pct=counts.draw_pct %}
-    {% include "predictions/_prediction_seg_btn.html" with choice="2" label="П2" pct=counts.away_pct %}
+<div id="prediction-widget-{{ match.id }}" class="mxp" onclick="event.preventDefault(); event.stopPropagation()">
+    <div class="mxp__btns" role="group" aria-label="Прогноз: победа хозяев, ничья, победа гостей">
+        {% include "predictions/_mxp_btn.html" with choice="1" label="1" pct=counts.home_pct name=match.home_team.name %}
+        {% include "predictions/_mxp_btn.html" with choice="X" label="Х" pct=counts.draw_pct name="ничья" %}
+        {% include "predictions/_mxp_btn.html" with choice="2" label="2" pct=counts.away_pct name=match.away_team.name %}
     </div>
+    {% if counts.total and my_prediction or counts.total and not match.is_prediction_open %}
+    <div class="mxp__pcts" aria-label="Доли прогнозов"><span>{{ counts.home_pct }}</span><span>{{ counts.draw_pct }}</span><span>{{ counts.away_pct }}</span></div>
+    {% endif %}
     {% if just_predicted %}
     {# Только что сделан прогноз: вызов другу и переход к следующему матчу без прогноза. #}
-    <div class="dx-predicted-row">
-        <span class="dx-predicted-row__ok"><i class="ti ti-check"></i> Принято</span>
-        {% if challenge_url %}
-        <button type="button" class="dx-predicted-row__btn" data-share data-share-url="{{ challenge_url }}"
-                data-share-text="Спорим, мой прогноз на {{ match.home_team.name }} — {{ match.away_team.name }} точнее? Сделай свой на DOPX">
-            <i class="ti ti-swords"></i><span data-share-label>Вызов</span>
-        </button>
-        {% endif %}
-        {% if next_match %}
-        <a href="{% url 'matches:detail' next_match.id %}" class="dx-predicted-row__btn dx-predicted-row__btn--next">
-            Следующий ({{ left_count }}) <i class="ti ti-arrow-right"></i>
-        </a>
-        {% endif %}
+    <div class="mxp__after">
+        <span class="mxp__ok"><i class="ti ti-check"></i>Принято</span>
+        {% if challenge_url %}<button type="button" class="mxp__link" data-share data-share-url="{{ challenge_url }}"
+                data-share-text="Спорим, мой прогноз на {{ match.home_team.name }} — {{ match.away_team.name }} точнее? Сделай свой на DOPX"><i class="ti ti-swords"></i><span data-share-label>Вызов</span></button>{% endif %}
+        {% if next_match %}<a href="{% url 'matches:detail' next_match.id %}" class="mxp__link" onclick="event.stopPropagation()">Следующий ({{ left_count }})</a>{% endif %}
     </div>
     {% endif %}
 </div>

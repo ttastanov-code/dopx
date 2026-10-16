@@ -1,0 +1,6 @@
+{% comment %}
+Прогноз на исход. Контекст: match, counts, my_prediction. Опрос из трёх строк (как в Telegram): до голоса — варианты,
+после голоса или закрытия приёма — заливка по доле, процент, ярлыки «ваш прогноз» и «исход». Стили — css/match-card.css (poll).
+{% endcomment %}
+{% if counts.total and my_prediction or counts.total and not match.is_prediction_open %}{% with split=True %}{% include "predictions/_pick_body.html" %}{% endwith %}
+{% else %}{% include "predictions/_pick_body.html" %}{% endif %}

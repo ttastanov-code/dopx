@@ -1,0 +1,6 @@
+{% include "predictions/_pick_head.html" %}
+<div class="poll{% if split %} is-split{% endif %}" role="group" aria-label="Прогноз на исход">
+    {% include "predictions/_poll_row.html" with choice="1" pct=counts.home_pct team=match.home_team %}
+    {% include "predictions/_poll_row.html" with choice="X" pct=counts.draw_pct team=None %}
+    {% include "predictions/_poll_row.html" with choice="2" pct=counts.away_pct team=match.away_team %}
+</div>

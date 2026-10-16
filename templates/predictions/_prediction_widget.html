@@ -12,43 +12,9 @@
 <div id="prediction-widget-{{ match.id }}" hidden></div>
 {% else %}
 <div id="prediction-widget-{{ match.id }}" class="mh__section">
-        <div class="pw__head">
-            <span class="pw__title">Прогноз болельщиков</span>
-            {% if counts.total %}<span class="pw__total">{{ counts.total }} {{ counts.total|ru_plural:"прогноз,прогноза,прогнозов" }}</span>{% endif %}
-        </div>
+        {% include "predictions/_pick.html" %}
 
-        {# П1 / Х / П2: кнопки, пока окно открыто; после — итог с отметкой исхода. #}
-        <div class="pw__options">
-            {% for code, label, pct in pw_options %}
-            <button type="button"
-                    {% if match.is_prediction_open %}
-                    hx-post="{% url 'predictions:predict' match.id %}"
-                    hx-vals='{"choice": "{{ code }}"}'
-                    hx-target="#prediction-widget-{{ match.id }}"
-                    hx-swap="outerHTML"
-                    {% else %}disabled{% endif %}
-                    class="pw__opt{% if my_prediction.choice == code %} is-mine{% endif %}{% if match.final_result == code %} is-result{% endif %}">
-                <span class="pw__label">{{ label }}</span>
-                <span class="pw__pct">{% if counts.total %}{{ pct }}%{% else %}—{% endif %}</span>
-                {% if match.final_result == code %}<i class="ti ti-circle-check pw__mark"></i>{% elif my_prediction.choice == code %}<i class="ti ti-check pw__mark"></i>{% endif %}
-            </button>
-            {% endfor %}
-        </div>
-        {% if counts.total %}
-        <div class="pw__bar" aria-hidden="true">
-            <span class="pw__bar-home" style="width: {{ counts.home_pct }}%"></span><span class="pw__bar-draw" style="width: {{ counts.draw_pct }}%"></span><span class="pw__bar-away" style="width: {{ counts.away_pct }}%"></span>
-        </div>
-        {% endif %}
-
-        {% if match.final_result and my_prediction %}
-        <div class="mt-2 sm:mt-3 text-[11px] sm:text-xs flex items-center gap-1.5 {% if my_prediction.choice == match.final_result %}text-success{% else %}text-error{% endif %}">
-            <i class="ti {% if my_prediction.choice == match.final_result %}ti-circle-check{% else %}ti-circle-x{% endif %}"></i>
-            {% if my_prediction.choice == match.final_result %}
-            Прогноз сбылся.
-            {% else %}
-            Прогноз не сбылся.
-            {% endif %}
-        </div>
+        {% if match.final_result %}
         {% elif match.prediction_window_not_yet_open %}
         {# Прогноз уже есть (окно сдвинулось после объявления времени) — подпись «откроются» не показываем. #}
         {% if not my_prediction %}
