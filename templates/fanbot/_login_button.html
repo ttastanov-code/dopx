@@ -1,8 +1,46 @@
 {% if enabled %}
-{# Виджет Telegram: после подтверждения возвращает на auth_url с подписанными данными. #}
-<div class="flex flex-col items-center gap-2 my-3">
-    <script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="{{ bot }}" data-size="large"
-            data-radius="12" data-auth-url="{{ auth_url }}" data-request-access="write"></script>
-    <span class="text-[11px] opacity-50">Регистрация не нужна — аккаунт создастся сам</span>
+{% comment %}
+Вход через Telegram своей кнопкой (стандартный виджет — белая рамка-iframe, не красится под тему).
+Окно подтверждения Telegram открывает Telegram.Login.auth, подписанные данные уходят на auth_url, как у виджета.
+Скрипт не загрузился — кнопка ведёт в бота. Стили здесь же: страницы входа без ui.css.
+{% endcomment %}
+<style>
+.tg-login-wrap { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; margin: .75rem 0; }
+.tg-login { display: flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; padding: 0 1.25rem; border-radius: 1rem;
+  font-weight: 700; font-size: 1rem; color: #fff; text-decoration: none; background: linear-gradient(180deg, #34aee8, #229ed9);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .25), 0 8px 20px -10px rgb(34 158 217 / .8); transition: filter .15s ease, transform .15s ease; }
+.tg-login:hover { filter: brightness(1.06); color: #fff; text-decoration: none; }
+.tg-login:active { transform: scale(.98); }
+.tg-login:focus-visible { outline: 2px solid #229ed9; outline-offset: 2px; }
+.tg-login__ico { width: 1.35rem; height: 1.35rem; }
+.tg-login.is-busy { opacity: .7; pointer-events: none; }
+.tg-login-wrap__hint { text-align: center; font-size: .72rem; opacity: .55; }
+</style>
+<div class="tg-login-wrap">
+    <a href="https://t.me/{{ bot }}?start=login" class="tg-login" data-tg-login data-bot-id="{{ bot_id }}" data-auth-url="{{ auth_url }}" rel="noopener">
+        <svg class="tg-login__ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.94 4.66 18.9 19.01c-.23 1.01-.83 1.26-1.68.78l-4.63-3.41-2.23 2.15c-.25.25-.45.45-.93.45l.33-4.73 8.6-7.77c.37-.33-.08-.52-.58-.19L7.15 12.97 2.57 11.54c-1-.31-1.02-1 .21-1.48l17.9-6.9c.83-.31 1.56.19 1.26 1.5Z"/></svg>
+        <span>Войти через Telegram</span>
+    </a>
+    <span class="tg-login-wrap__hint">Регистрация не нужна — аккаунт создастся сам</span>
 </div>
+<script async src="https://telegram.org/js/telegram-widget.js?22"></script>
+<script>
+(() => {
+    const btn = document.currentScript.parentElement.querySelector('[data-tg-login]');
+    if (!btn || btn.dataset.ready) return;
+    btn.dataset.ready = '1';
+    btn.addEventListener('click', (e) => {
+        if (!(window.Telegram && Telegram.Login && Telegram.Login.auth)) return;  // скрипт не загрузился — переходим в бота
+        e.preventDefault();
+        btn.classList.add('is-busy');
+        Telegram.Login.auth({ bot_id: btn.dataset.botId, request_access: 'write', lang: 'ru' }, (user) => {
+            btn.classList.remove('is-busy');
+            if (!user) return;  // окно закрыли
+            const url = new URL(btn.dataset.authUrl, location.href);
+            Object.entries(user).forEach(([k, v]) => url.searchParams.set(k, v));
+            location.href = url.toString();
+        });
+    });
+})();
+</script>
 {% endif %}

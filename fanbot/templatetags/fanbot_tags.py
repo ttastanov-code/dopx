@@ -18,7 +18,8 @@ def telegram_login(context, next_url=""):
 
     next_url = next_url if is_page_next(next_url or "") else ""
     url = reverse("fanbot:login") + ("?" + urlencode({"next": next_url}) if next_url else "")
-    return {"enabled": True, "bot": username, "auth_url": request.build_absolute_uri(url) if request else url}
+    return {"enabled": True, "bot": username, "bot_id": settings.FAN_BOT_TOKEN.split(":")[0],
+            "auth_url": request.build_absolute_uri(url) if request else url}
 
 
 @register.simple_tag
