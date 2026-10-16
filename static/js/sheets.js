@@ -38,6 +38,16 @@
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(sync); } };
   new MutationObserver(schedule).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
   window.addEventListener('resize', schedule);
+  // Ушли со страницы с открытой шторкой (ссылка внутри неё) — при возврате из кэша браузера (назад, вкладка)
+  // страница не должна остаться «замороженной» со сдвинутой вверх шапкой: закрываем окна и снимаем блокировку.
+  window.addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    document.querySelectorAll('.dx-drawer.is-open').forEach((d) => { d.classList.remove('is-open', 'is-ready'); d.setAttribute('aria-hidden', 'true'); });
+    document.documentElement.classList.remove('nf-sheet-open', 'dopx-loading');
+    document.body.classList.remove('dopx-loading', 'dopx-loading-slow');
+    locked = true; setLock(false); schedule();
+  });
+  window.addEventListener('pagehide', () => { if (locked) setLock(false); });
 
   // ---------- Свайп вниз ----------
   // panel — окно, scroll — его прокручиваемая часть, close — кнопка закрытия (иначе Escape, его слушают модалки).
