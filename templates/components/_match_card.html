@@ -1,223 +1,72 @@
-{% load static %}
 {% load match_extras ui_extras %}
 {% comment %}
-Карточка матча (главная и /matches/).
-{% include 'components/_match_card.html' with match=match %}
-
-Все card_* поля навешивает matches/card_services.py::attach_card_extras —
-компонент сам ничего не запрашивает. Опциональные поля проверяются через {% if %}:
-card_intrigue, card_h2h, card_home_form_text / card_away_form_text, card_engagement,
-card_followed_teams, card_key_moment, card_hero, card_dna_traits,
-card_reaction_counts / card_my_reaction, card_reaction_badge, card_sensation,
-card_table_impact, card_cta, list_prediction_counts / list_my_prediction.
-Обратный отсчёт — Alpine matchCountdown.
-{% endcomment %}
-{% comment %}
-Live-карточка обновляет себя каждые 15 с (matches:card).
-data-background-poll — без глобального лоадера.
+Строка матча в списке (главная, /matches/): хозяева — время или счёт — гости; под ней тихие строки подробностей
+(интрига, форма, очные / момент, герой, сенсация, таблица, ДНК), пометка о вашей оценке, прогноз или реакции.
+Список-обёртка — components/_match_list.html, стили — css/match-card.css (mx).
+Live-строка обновляет себя (matches:card), data-background-poll — без глобального лоадера.
 {% endcomment %}
 <a href="{% url 'matches:detail' match.id %}"
    id="match-card-{{ match.id }}"
-   class="mrow block group
-          {% if match.status == 'live' %}mrow--live
-          {% elif match.status == 'finished' %}mrow--finished
-          {% elif match.status == 'postponed' %}mrow--postponed
-          {% elif match.status == 'cancelled' %}mrow--cancelled
-          {% else %}mrow--scheduled{% endif %}"
-   {% if match.status == 'scheduled' and match.kickoff_known %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}
+   class="mx mx--{{ match.status }}"
 {% with poll=match.live_poll_seconds %}{% if poll %}
-     data-background-poll
-     hx-get="{% url 'matches:card' match.id %}"
-     hx-trigger="every {{ poll }}s, dopx:wake"
-     hx-swap="outerHTML"
-     {% elif match.poll_wake_at %}
-     data-background-poll
-     hx-get="{% url 'matches:card' match.id %}"
-     hx-trigger="dopx:wake"
-     hx-swap="outerHTML"
-     data-wake-at="{{ match.poll_wake_at|date:'c' }}"
-     {% endif %}{% endwith %}>
+   data-background-poll hx-get="{% url 'matches:card' match.id %}" hx-trigger="every {{ poll }}s, dopx:wake" hx-swap="outerHTML"
+{% elif match.poll_wake_at %}
+   data-background-poll hx-get="{% url 'matches:card' match.id %}" hx-trigger="dopx:wake" hx-swap="outerHTML" data-wake-at="{{ match.poll_wake_at|date:'c' }}"
+{% endif %}{% endwith %}>
+    <span class="mx__team mx__team--home{% if match.status == 'finished' and match.home_score > match.away_score %} is-win{% elif match.status == 'finished' and match.home_score < match.away_score %} is-lose{% endif %}">
+        <span class="mx__name">{{ match.home_team.name }}</span>
+        {% if match.home_team.logo_display %}<img class="mx__logo" src="{{ match.home_team.logo_display }}" alt="">{% else %}<span class="mx__logo mx__logo--none">{{ match.home_team.name|first|upper }}</span>{% endif %}
+    </span>
 
-    {# === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === #}
-    <div class="mrow__top">
-        <span class="mrow__meta">
-            <i class="ti ti-trophy flex-shrink-0"></i>
-            <span>{{ match.league.name }}{% if match.tour %} · {{ match.tour }}-й тур{% endif %}</span>
-            {% if match.is_derby %}
-            <i class="ti ti-flame text-error flex-shrink-0" title="Дерби"></i>
-            {% endif %}
-            {# Бейдж переноса — только у старых матчей с was_rescheduled. #}
-            {% if match.was_rescheduled and match.status != 'postponed' %}
-            <i class="ti ti-calendar-exclamation text-warning flex-shrink-0" title="Дата перенесена относительно тура"></i>
-            {% endif %}
-        </span>
-        <span class="mrow__badge">
-            {% if match.status == 'live' %}
-            <span class="mrow__live-dot"></span> LIVE{% if match.live_clock %} · {% include 'components/_live_clock.html' with match=match %}{% endif %}
-            {% elif match.status == 'finished' %}
-            <i class="ti ti-check"></i> {{ match.start_time|date:"d.m.Y" }}
-            {% elif match.status == 'postponed' %}
-            <i class="ti ti-calendar-off"></i> Перенесён
-            {% elif match.status == 'cancelled' %}
-            <i class="ti ti-ban"></i> Отменён
-            {% else %}
-            {# Обратный отсчёт; дата внутри — fallback без JS. #}
-            {% if match.kickoff_known %}
-            <i class="ti ti-clock"></i> <span x-text="countdownText">{{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}</span>
-            {% else %}
-            <i class="ti ti-calendar"></i> {{ match.start_time|date:"d.m" }} · время уточняется
-            {% endif %}
-            {% endif %}
-        </span>
-    </div>
+    <span class="mx__mid" data-live-pop>
+        {% if match.status == 'finished' or match.status == 'live' %}
+        <span class="mx__score">{{ match.home_score|default_if_none:"0" }}<i>–</i>{{ match.away_score|default_if_none:"0" }}</span>
+        {% if match.status == 'live' %}<span class="mx__live">{% include 'components/_live_clock.html' with match=match fallback="в эфире" %}</span>{% endif %}
+        {% elif match.status == 'postponed' %}<span class="mx__state">перенесён</span>
+        {% elif match.status == 'cancelled' %}<span class="mx__state">отменён</span>
+        {% elif match.kickoff_known %}<span class="mx__time">{{ match.start_time|time:"H:i" }}</span>
+        {% else %}<span class="mx__state">время уточняется</span>{% endif %}
+    </span>
 
-    {% if match.card_intrigue or match.card_followed_teams or match.card_reaction_badge %}
-    {# Тег интриги, «Ваша команда», «Матч тура». #}
-    <div class="mrow__tags-row">
-        {% if match.card_intrigue %}
-        <span class="mrow__intrigue-tag" title="Почему это интересный матч">
-            <i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_intrigue }}
-        </span>
-        {% endif %}
-        {% if match.card_reaction_badge %}
-        <span class="mrow__reaction-tag" title="Явное большинство болельщиков отметили этот матч как лучший в туре">
-            <i class="ti ti-trophy flex-shrink-0"></i>{{ match.card_reaction_badge }}
-        </span>
-        {% endif %}
-        {% if match.card_followed_teams %}
-        <span class="mrow__followed-badge" title="Вы подписаны на {{ match.card_followed_teams|join:' и ' }}">
-            <i class="ti ti-heart flex-shrink-0"></i>Ваша команда
-        </span>
-        {% endif %}
-    </div>
+    <span class="mx__team mx__team--away{% if match.status == 'finished' and match.away_score > match.home_score %} is-win{% elif match.status == 'finished' and match.away_score < match.home_score %} is-lose{% endif %}">
+        {% if match.away_team.logo_display %}<img class="mx__logo" src="{{ match.away_team.logo_display }}" alt="">{% else %}<span class="mx__logo mx__logo--none">{{ match.away_team.name|first|upper }}</span>{% endif %}
+        <span class="mx__name">{{ match.away_team.name }}</span>
+    </span>
+
+    {# Подробности матча — тихими строками под табло. До игры: интрига, форма, очные. После: момент, герой, сенсация, таблица, ДНК, голоса. #}
+    {% if match.status == 'scheduled' or match.status == 'live' %}
+    {% if match.card_intrigue or match.card_followed_teams or match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
+    <span class="mx__info">
+        {% if match.card_intrigue or match.card_followed_teams %}<span class="mx__line mx__line--accent">{% if match.card_intrigue %}<i class="ti ti-bolt"></i>{{ match.card_intrigue }}{% endif %}{% if match.card_intrigue and match.card_followed_teams %}<em>·</em>{% endif %}{% if match.card_followed_teams %}<i class="ti ti-heart"></i>Ваша команда{% endif %}</span>{% endif %}
+        {% if match.card_home_form_text or match.card_away_form_text %}<span class="mx__line"><i class="ti ti-chart-line"></i>{% if match.card_home_form_text %}<b>{{ match.home_team.name }}</b> {{ match.card_home_form_text|lower }}{% endif %}{% if match.card_home_form_text and match.card_away_form_text %}<em>·</em>{% endif %}{% if match.card_away_form_text %}<b>{{ match.away_team.name }}</b> {{ match.card_away_form_text|lower }}{% endif %}</span>{% endif %}
+        {% if match.card_h2h %}<span class="mx__line" title="Последние {{ match.card_h2h.count }} очных встреч"><i class="ti ti-history"></i>Очные встречи: <b>{{ match.home_team.name }} {{ match.card_h2h.home_wins }}</b><em>·</em>ничьи {{ match.card_h2h.draws }}<em>·</em><b>{{ match.away_team.name }} {{ match.card_h2h.away_wins }}</b></span>{% endif %}
+    </span>
     {% endif %}
-
-    {# === КОМАНДЫ: друг под другом, справа счёт (live/завершён) === #}
-    {# === ТАБЛО: герб и название каждой команды, в центре время, счёт или статус === #}
-    <div class="mrow__board">
-        {% include "components/_match_card_team.html" with t=match.home_team sc=match.home_score other=match.away_score %}
-        <div class="mrow__mid" data-live-pop>
-            {% if match.status == 'finished' or match.status == 'live' %}
-            <span class="mrow__big">{{ match.home_score|default_if_none:"0" }}<i>:</i>{{ match.away_score|default_if_none:"0" }}</span>
-            <span class="mrow__small">{% if match.status == 'live' %}{% if match.live_clock %}{% include 'components/_live_clock.html' with match=match %}{% else %}идёт{% endif %}{% else %}завершён{% endif %}</span>
-            {% elif match.status == 'postponed' %}
-            <i class="ti ti-calendar-off mrow__mid-ico"></i><span class="mrow__small">перенесён</span>
-            {% elif match.status == 'cancelled' %}
-            <i class="ti ti-ban mrow__mid-ico"></i><span class="mrow__small">отменён</span>
-            {% elif match.kickoff_known %}
-            <span class="mrow__big mrow__big--time">{{ match.start_time|time:"H:i" }}</span>
-            <span class="mrow__small" x-text="dayText">{{ match.start_time|date:"D, j E"|lower }}</span>
-            {% else %}
-            <span class="mrow__big mrow__big--time">—:—</span>
-            <span class="mrow__small">{{ match.start_time|date:"j E"|lower }}, время уточняется</span>
-            {% endif %}
-        </div>
-        {% include "components/_match_card_team.html" with t=match.away_team sc=match.away_score other=match.home_score %}
-    </div>
-
-    {% if match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
-    {# Форма и очные встречи — одной строкой (несыгранные матчи). #}
-    <div class="mrow__ctx">
-        {% if match.card_home_form_text %}<span class="mrow__ctx-item" title="Форма {{ match.home_team.name }} за последние матчи"><i class="ti {% if 'Не побеждает' in match.card_home_form_text %}ti-trending-down{% else %}ti-trending-up{% endif %}"></i><b>{{ match.home_team.name }}</b> {{ match.card_home_form_text|lower }}</span>{% endif %}
-        {% if match.card_away_form_text %}<span class="mrow__ctx-item" title="Форма {{ match.away_team.name }} за последние матчи"><i class="ti {% if 'Не побеждает' in match.card_away_form_text %}ti-trending-down{% else %}ti-trending-up{% endif %}"></i><b>{{ match.away_team.name }}</b> {{ match.card_away_form_text|lower }}</span>{% endif %}
-        {% if match.card_h2h %}<span class="mrow__ctx-item" title="Очные встречи за последние {{ match.card_h2h.count }} матчей: победы {{ match.home_team.name }} · ничьи · победы {{ match.away_team.name }}"><i class="ti ti-history"></i>Очные {{ match.card_h2h.home_wins }}–{{ match.card_h2h.draws }}–{{ match.card_h2h.away_wins }}</span>{% endif %}
-    </div>
-    {% endif %}
-
-    {% if match.status == 'finished' %}
-    {# Блоки завершённого матча — каждый рендерится независимо. #}
-    {% if match.card_key_moment %}
-    <div class="mrow__key-moment" title="Момент, который определил исход матча">
-        <i class="ti ti-bolt"></i><span>{{ match.card_key_moment }}</span>
-    </div>
-    {% endif %}
-
-    {% if match.card_hero %}
-    <div class="mrow__hero" title="Лучший по оценкам болельщиков DOPX среди игроков этого матча">
-        {% if match.card_hero.player.photo_display %}
-        <img src="{{ match.card_hero.player.photo_display }}" alt="" class="mrow__hero-photo">
-        {% else %}
-        <div class="mrow__hero-photo-fallback">{{ match.card_hero.player.first_name|first|upper }}</div>
-        {% endif %}
-        <div class="mrow__hero-info">
-            <span class="mrow__hero-label"><i class="ti ti-medal flex-shrink-0"></i>Игрок матча</span>
-            <span class="mrow__hero-name">{{ match.card_hero.player.full_name }} · {{ match.card_hero.score|floatformat:1 }}</span>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if match.card_dna_traits %}
-    {# Подпись источника видна сразу. #}
-    <div class="mrow__dna-traits">
-        <span class="mrow__dna-caption">ДНК матча по оценкам болельщиков:</span>
-        <div class="mrow__dna-chips">
-            {% for trait in match.card_dna_traits %}<span class="mrow__dna-chip">{{ trait }}</span>{% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    {% if match.card_sensation %}
-    {# Пояснение к индексу сенсации в тексте. #}
-    <div class="mrow__sensation" title="Насколько результат удивил болельщиков. Считаем по прогнозам до матча или по голосованию после него">
-        <i class="ti ti-alert-triangle flex-shrink-0"></i>
-        <span>{% if match.card_sensation_source == 'predictions' %}Сенсация: {{ match.card_sensation }}% прогнозов было за другой исход{% else %}Сенсация: {{ match.card_sensation }}% болельщиков отметили «Неожиданно»{% endif %}</span>
-    </div>
-    {% endif %}
-
-    {% if match.card_table_impact %}
-    <div class="mrow__table-impact" title="Как этот матч изменил положение команды в турнирной таблице">
-        <i class="ti ti-arrow-up"></i><span>{{ match.card_table_impact }}</span>
-    </div>
+    {% elif match.status == 'finished' %}
+    {% if match.card_key_moment or match.card_hero or match.card_sensation or match.card_table_impact or match.card_dna_traits or match.card_reaction_badge %}
+    <span class="mx__info">
+        {% if match.card_key_moment %}<span class="mx__line"><i class="ti ti-bolt"></i>{{ match.card_key_moment }}</span>{% endif %}
+        {% if match.card_hero %}<span class="mx__line mx__line--hero" title="Лучший по оценкам болельщиков DOPX">{% if match.card_hero.player.photo_display %}<img src="{{ match.card_hero.player.photo_display }}" alt="">{% else %}<i class="ti ti-medal"></i>{% endif %}Игрок матча: <b>{{ match.card_hero.player.full_name }}</b> {{ match.card_hero.score|floatformat:1 }}</span>{% endif %}
+        {% if match.card_reaction_badge %}<span class="mx__line mx__line--accent"><i class="ti ti-trophy"></i>{{ match.card_reaction_badge }}</span>{% endif %}
+        {% if match.card_sensation %}<span class="mx__line"><i class="ti ti-alert-triangle"></i>{% if match.card_sensation_source == 'predictions' %}Сенсация: {{ match.card_sensation }}% прогнозов было за другой исход{% else %}Сенсация: {{ match.card_sensation }}% болельщиков отметили «Неожиданно»{% endif %}</span>{% endif %}
+        {% if match.card_table_impact %}<span class="mx__line"><i class="ti ti-arrows-sort"></i>{{ match.card_table_impact }}</span>{% endif %}
+        {% if match.card_dna_traits %}<span class="mx__line" title="ДНК матча по оценкам болельщиков"><i class="ti ti-dna-2"></i>{{ match.card_dna_traits|join:" · " }}</span>{% endif %}
+    </span>
     {% endif %}
     {% endif %}
 
-    {# Нижняя строка — только если есть что показать. #}
-    {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' or match.card_engagement and not match.list_prediction_counts %}
-    <div class="mrow__footer">
-        <div class="mrow__footer-meta">
-            {% if match.aggregate and match.aggregate.total_votes %}
-            <span class="flex items-center gap-1">
-                <i class="ti ti-users flex-shrink-0"></i>
-                {{ match.aggregate.total_votes }}
-            </span>
-            {% endif %}
-            {# Вовлечённость в прогноз. #}
-            {% if match.card_engagement and not match.list_prediction_counts %}
-            <span class="mrow__engagement">{{ match.card_engagement }}</span>
-            {% endif %}
-        </div>
-        <div class="flex items-center gap-1.5 flex-shrink-0">
-            {% if match.user_has_evaluated %}
-            <span class="badge badge-success badge-xs gap-1" title="Вы уже оценили этот матч">
-                <i class="ti ti-check flex-shrink-0"></i>
-                <span class="hidden sm:inline">Оценено</span>
-            </span>
-            {% elif match.status == 'finished' and match.is_voting_open %}
-            {# <button>, а не <a> — карточка уже ссылка. #}
-            <button type="button"
-                    onclick="event.stopPropagation(); window.location.href='{% url 'evaluations:context' match.id %}'"
-                    class="mrow__cta btn btn-xs btn-primary shrink-0">
-                <i class="ti ti-dopx-rate"></i>
-                <span class="hidden sm:inline">Оценить</span>
-            </button>
-            {% elif match.status == 'finished' %}
-            {# CTA завершённого матча (describe_finished_cta). #}
-            <span class="badge badge-ghost badge-xs shrink-0">
-                <i class="ti {{ match.card_cta.icon|default:'ti-lock' }} flex-shrink-0"></i>
-                <span class="hidden sm:inline">{{ match.card_cta.label|default:"Матч завершён" }}</span>
-            </span>
-            {% endif %}
-        </div>
-    </div>
+    {# Одна пометка о вашем состоянии — только если она есть. #}
+    {% if match.status == 'finished' and match.user_has_evaluated %}
+    <span class="mx__note mx__note--done"><i class="ti ti-check"></i>Вы оценили</span>
+    {% elif match.status == 'finished' and match.is_voting_open and user.is_authenticated %}
+    <span class="mx__note mx__note--cta" role="link" onclick="event.preventDefault(); event.stopPropagation(); window.location.href='{% url 'evaluations:context' match.id %}'"><i class="ti ti-dopx-rate"></i>Оценить матч</span>
     {% endif %}
 
     {% if match.list_prediction_counts %}
-    {# Инлайн-прогноз 1X2. Разделитель рисует сам партиал. #}
     {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
     {% endif %}
-
     {% if match.status == 'finished' and match.card_reaction_counts %}
-    {# Реакция сообщества. #}
     {% include 'matches/_reaction_widget_compact.html' with match=match counts=match.card_reaction_counts my_reaction=match.card_my_reaction %}
     {% endif %}
+    {% if match.aggregate.total_votes %}<span class="mx__votes"><i class="ti ti-users"></i>{{ match.aggregate.total_votes }} {{ match.aggregate.total_votes|ru_plural:"оценка,оценки,оценок" }}</span>{% endif %}
 </a>

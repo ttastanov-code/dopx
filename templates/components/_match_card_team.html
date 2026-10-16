@@ -1,5 +1,0 @@
-{# Команда на табло карточки матча (_match_card.html): герб и название под ним. Контекст: t, sc, other, match. #}
-<div class="mrow__side{% if match.status == 'finished' and sc > other %} is-winner{% elif match.status == 'finished' and sc < other %} is-loser{% endif %}">
-    {% if t.logo_display %}<img src="{{ t.logo_display }}" alt="" class="mrow__logo">{% else %}<span class="mrow__logo mrow__logo--fallback">{{ t.name|first|upper }}</span>{% endif %}
-    <span class="mrow__name">{{ t.name }}</span>
-</div>

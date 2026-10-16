@@ -1,0 +1,19 @@
+{% load match_extras ui_extras %}
+{% comment %}
+Список матчей одним блоком, по дням: {% include 'components/_match_list.html' with matches=... %}
+by_day=False — без заголовков дней (live). Строка — components/_match_card.html.
+{% endcomment %}
+<div class="mlist">
+    {% if by_day is False %}
+    {% for match in matches %}{% include 'components/_match_card.html' with match=match %}{% endfor %}
+    {% else %}
+    {% regroup matches by start_time|date:"Y-m-d" as days %}
+    {% for day in days %}
+    <div class="mlist__day">
+        <span class="mlist__day-label">{{ day.list.0.start_time|matchday_label }}</span>
+        <span class="mlist__day-meta">{{ day.list.0.start_time|matchday_date }}{% with t=day.list|common_tour %}{% if t %} · {{ t }}-й тур{% endif %}{% endwith %}</span>
+    </div>
+    {% for match in day.list %}{% include 'components/_match_card.html' with match=match %}{% endfor %}
+    {% endfor %}
+    {% endif %}
+</div>

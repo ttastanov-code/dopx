@@ -80,3 +80,10 @@ def team_result(match, team):
     own, other = ((match.home_score, match.away_score) if match.home_team_id == team.id
                   else (match.away_score, match.home_score))
     return "В" if own > other else "П" if own < other else "Н"
+
+
+@register.filter
+def common_tour(matches):
+    """Тур, если он общий у всех матчей дня; разные туры — пусто (в заголовке дня тур не пишем)."""
+    tours = {getattr(m, "tour", None) for m in matches}
+    return tours.pop() if len(tours) == 1 else None

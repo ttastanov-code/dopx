@@ -93,11 +93,7 @@
                     <i class="ti ti-chevron-right"></i>
                 </a>
             </div>
-            <div class="space-y-2 md:space-y-3">
-                {% for match in live_matches %}
-                {% include 'components/_match_card.html' with match=match %}
-                {% endfor %}
-            </div>
+            {% include 'components/_match_list.html' with matches=live_matches by_day=False %}
         </section>
         {% endif %}
 
@@ -113,17 +109,8 @@
                     <i class="ti ti-chevron-right"></i>
                 </a>
             </div>
-            {# На ПК — две колонки компактных карточек. #}
-            <div class="dx-match-grid">
-                {% for match in upcoming_matches %}
-                {% include 'components/_match_card.html' with match=match %}
-                {% empty %}
-                <div class="text-center py-8 opacity-60">
-                    <i class="ti ti-calendar-off text-3xl sm:text-4xl mb-2"></i>
-                    <p class="text-sm">Запланированных матчей нет</p>
-                </div>
-                {% endfor %}
-            </div>
+            {% if upcoming_matches %}{% include 'components/_match_list.html' with matches=upcoming_matches %}
+            {% else %}<div class="text-center py-8 opacity-60"><i class="ti ti-calendar-off text-3xl sm:text-4xl mb-2"></i><p class="text-sm">Запланированных матчей нет</p></div>{% endif %}
         </section>
 
         {# === ПОСЛЕДНИЕ РЕЗУЛЬТАТЫ === #}
@@ -138,16 +125,8 @@
                     <i class="ti ti-chevron-right"></i>
                 </a>
             </div>
-            <div class="dx-match-grid">
-                {% for match in recent_matches %}
-                {% include 'components/_match_card.html' with match=match %}
-                {% empty %}
-                <div class="text-center py-8 opacity-60">
-                    <i class="ti ti-scoreboard text-3xl sm:text-4xl mb-2"></i>
-                    <p class="text-sm">Завершённых матчей пока нет</p>
-                </div>
-                {% endfor %}
-            </div>
+            {% if recent_matches %}{% include 'components/_match_list.html' with matches=recent_matches %}
+            {% else %}<div class="text-center py-8 opacity-60"><i class="ti ti-scoreboard text-3xl sm:text-4xl mb-2"></i><p class="text-sm">Завершённых матчей пока нет</p></div>{% endif %}
         </section>
     </div>
 

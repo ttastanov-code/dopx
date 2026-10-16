@@ -109,29 +109,33 @@ hx-атрибуты есть только при live (или перед ста�
     </div>
     {% endif %}
 
-    {# Действия одной строкой: главное — на всю ширину, «Поделиться» — вторичная кнопка той же высоты справа. #}
+    {# Главное действие — только у сыгранного матча. #}
+    {% if match.status == 'finished' %}
     <div class="mh__actions">
-        {% if match.status == 'finished' %}
-            {% if voting_open and not user_has_evaluated %}
-            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary mh__cta">
-                <i class="ti ti-dopx-rate"></i>
-                {% if user_has_pulse_reactions %}Завершить оценку{% else %}Оценить матч{% endif %}
-            </a>
-            {% elif user_has_evaluated %}
-            <span class="mh__state mh__state--ok"><i class="ti ti-circle-check"></i> Вы оценили матч</span>
-            {% else %}
-            <span class="mh__state"><i class="ti ti-lock"></i> Голосование закрыто</span>
-            {% endif %}
+        {% if voting_open and not user_has_evaluated %}
+        <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary mh__cta">
+            <i class="ti ti-dopx-rate"></i>
+            {% if user_has_pulse_reactions %}Завершить оценку{% else %}Оценить матч{% endif %}
+        </a>
+        {% elif user_has_evaluated %}
+        <span class="mh__state mh__state--ok"><i class="ti ti-circle-check"></i> Вы оценили матч</span>
+        {% else %}
+        <span class="mh__state"><i class="ti ti-lock"></i> Голосование закрыто</span>
         {% endif %}
-        <button type="button" class="mh__share" data-share data-share-url="{{ share_url }}" data-share-text="{{ share_text }}"
-                aria-label="Поделиться матчем"><i class="ti ti-share-3"></i><span data-share-label>Поделиться</span></button>
     </div>
     {% if voting_open and not user_has_evaluated and user_has_pulse_reactions %}
     <p class="mh__hint">Вы реагировали на моменты во время матча. Полная оценка займёт около 2 минут.</p>
     {% endif %}
+    {% endif %}
 
-    <a href="{% url 'core:contacts' %}?category=data_error&match={{ match.id }}" class="mh__report">
-        <i class="ti ti-flag-3"></i> Сообщить об ошибке в данных
-    </a>
+    {# Нижняя строка: поделиться и сообщить об ошибке — тихо, рядом. #}
+    <div class="mh__foot">
+        <button type="button" class="mh__foot-btn" data-share data-share-url="{{ share_url }}" data-share-text="{{ share_text }}">
+            <i class="ti ti-share-3"></i><span data-share-label>Поделиться</span>
+        </button>
+        <a href="{% url 'core:contacts' %}?category=data_error&match={{ match.id }}" class="mh__foot-btn mh__foot-btn--muted">
+            <i class="ti ti-flag-3"></i> Сообщить об ошибке
+        </a>
+    </div>
     </div>{# /mh__body #}
 </div>

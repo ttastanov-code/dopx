@@ -67,7 +67,7 @@
 {# Открыли список без страницы — сразу к ближайшим матчам. #}
 <script>document.addEventListener('DOMContentLoaded', () => { if (!location.hash) document.getElementById('upcoming')?.scrollIntoView(); });</script>
 {% endif %}
-<div class="space-y-4 md:space-y-6 px-2 sm:px-0">
+<div class="space-y-5 md:space-y-6 px-2 sm:px-0">
     {% for group in date_groups %}
     <div{% if first_upcoming_day and group.grouper == first_upcoming_day %} id="upcoming" class="scroll-mt-20"{% endif %}>
         {# Липкий заголовок дня: «Сегодня · 13 сентября». #}
@@ -76,7 +76,7 @@
             <span class="dx-dayhead__date">{{ group.list.0.start_time|matchday_date }}</span>
             <span class="dx-dayhead__count">{{ group.list|length }} {{ group.list|length|ru_plural:"матч,матча,матчей" }}</span>
         </div>
-        <div class="space-y-3 md:space-y-4">
+        <div class="mlist">
         {% for match in group.list %}
         {% include 'components/_match_card.html' with match=match %}
         {% endfor %}

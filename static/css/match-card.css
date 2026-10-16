@@ -1,487 +1,105 @@
 /* static/css/match-card.css
+   Список матчей (components/_match_list.html, _match_card.html): один спокойный блок, строки через тонкие разделители,
+   в строке хозяева — время или счёт — гости; под счётом одна пометка о вашем состоянии. Цвета — переменные темы. */
 
-   Карточка матча (components/_match_card.html): одна строка
-   герб — имя — VS/счёт — имя — герб — стрелка, спокойная белая поверхность.
-   Цвета — только переменные темы (работает и в тёмной теме). */
-
-.mrow {
-    position: relative;
-    display: block;
+.mlist {
     background: var(--color-base-100);
-    border: 1px solid var(--color-base-300);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
     border-radius: 20px;
-    padding: 14px 16px;
-    transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    overflow: hidden;
 }
-.mrow:hover, .mrow:focus-visible {
-    border-color: color-mix(in oklab, var(--mrow-accent, var(--color-primary)) 35%, var(--color-base-300));
-    box-shadow: 0 4px 16px -8px color-mix(in oklab, var(--mrow-accent, var(--color-primary)) 30%, transparent);
-    transform: translateY(-1px);
+.mlist__day {
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    padding: 14px 18px 8px;
 }
-.mrow:active { transform: translateY(0); }
-.mrow:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-}
+.mlist__day:not(:first-child) { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); padding-top: 16px; }
+.mlist__day-label { font-size: .875rem; font-weight: 700; }
+.mlist__day-meta { font-size: .8125rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 
-/* Статусные акценты — точечно: бейдж времени, live-точка, счёт. */
-.mrow--live       { --mrow-accent: var(--color-error); }
-.mrow--finished   { --mrow-accent: var(--color-success); }
-.mrow--scheduled  { --mrow-accent: var(--color-primary); }
-.mrow--postponed  { --mrow-accent: var(--color-warning); }
-.mrow--cancelled  { --mrow-accent: var(--color-base-300); }
+/* Строка матча. */
+.mx {
+    display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(0, 1fr); align-items: center; column-gap: 12px;
+    padding: 14px 18px; position: relative;
+    transition: background-color .15s ease;
+}
+.mx + .mx::before { content: ""; position: absolute; top: 0; left: 18px; right: 18px; height: 1px; background: color-mix(in oklab, var(--color-base-content) 6%, transparent); }
+.mx:hover { background: color-mix(in oklab, var(--color-base-content) 3%, transparent); }
+.mx:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 
-/* === Верхняя строка: лига/тур слева, статус-пилюля справа === */
-.mrow__top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: .5rem;
-    margin-bottom: 10px;
-    flex-wrap: wrap;
-}
-.mrow__meta {
-    display: flex;
-    align-items: center;
-    gap: .3rem;
-    font-size: .75rem;
-    font-weight: 600;
-    color: color-mix(in oklab, var(--color-base-content) 52%, transparent);
-    min-width: 0;
-}
-.mrow__meta span { overflow-wrap: anywhere; }
-.mrow__badge {
-    display: inline-flex;
-    align-items: center;
-    gap: .3rem;
-    font-size: .6875rem;
-    font-weight: 700;
-    letter-spacing: .01em;
-    padding: .25rem .55rem;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--mrow-accent, var(--color-primary)) 12%, transparent);
-    color: var(--mrow-accent, var(--color-primary));
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-.mrow__live-dot {
-    width: 6px; height: 6px;
-    border-radius: 9999px;
-    background: var(--color-error);
-    animation: mrow-pulse 1.4s ease-in-out infinite;
-}
+.mx__team { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mx__team--home { justify-content: flex-end; text-align: right; }
+.mx__name { font-size: .9375rem; font-weight: 600; line-height: 1.25; color: var(--color-base-content); overflow-wrap: anywhere; }
+.mx__logo { width: 28px; height: 28px; flex: none; object-fit: contain; }
+.mx__logo--none { display: grid; place-items: center; border-radius: 50%; font-size: .75rem; font-weight: 800;
+    background: color-mix(in oklab, var(--color-base-content) 7%, transparent); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.mx__team.is-lose .mx__name { color: color-mix(in oklab, var(--color-base-content) 48%, transparent); font-weight: 500; }
+.mx__team.is-win .mx__name { font-weight: 700; }
 
-/* === Главная строка: герб — имя — VS/счёт — имя — герб — стрелка === */
-.mrow__main {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.mrow__team {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex: 1 1 0;
-}
-.mrow__team--away { flex-direction: row-reverse; text-align: right; }
-.mrow__crest {
-    width: 26px;
-    height: 26px;
-    object-fit: contain;
-    flex-shrink: 0;
-}
-.mrow__crest-fallback {
-    width: 26px;
-    height: 26px;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
-    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: .625rem;
-    font-weight: 800;
-    flex-shrink: 0;
-}
-/* Названия команд крупнее гербов. */
-.mrow__team-name {
-    font-size: .875rem;
-    font-weight: 600;
-    color: var(--color-base-content);
-    letter-spacing: -0.005em;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-.mrow__team-name--winner { font-weight: 800; }
+.mx__mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; }
+.mx__time { font-size: .9375rem; font-weight: 700; font-variant-numeric: tabular-nums; padding: 4px 10px; border-radius: 999px;
+    background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+.mx__score { font-size: 1.125rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
+.mx__score i { font-style: normal; margin: 0 .3em; color: color-mix(in oklab, var(--color-base-content) 35%, transparent); font-weight: 600; }
+.mx__live { font-size: .75rem; font-weight: 700; color: var(--color-error); }
+.mx--live .mx__score { color: var(--color-error); }
+.mx__state { font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); line-height: 1.2; }
 
-.mrow__center {
-    flex-shrink: 0;
-    min-width: 56px;
-    text-align: center;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-    font-size: 1.125rem;
-    color: var(--color-base-content);
-}
-.mrow--live .mrow__center { color: var(--color-error); }
-.mrow__center--vs {
-    font-size: .8125rem;
-    font-weight: 700;
-    letter-spacing: .04em;
-    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
-}
-.mrow__center-time {
-    font-size: .6875rem;
-    font-weight: 600;
-    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
-    margin-top: 2px;
-}
-
-.mrow__arrow {
-    flex-shrink: 0;
-    font-size: 1rem;
-    color: color-mix(in oklab, var(--color-base-content) 30%, transparent);
-    transition: transform .2s ease, color .2s ease;
-}
-.mrow:hover .mrow__arrow {
-    transform: translateX(2px);
-    color: var(--mrow-accent, var(--color-primary));
-}
-
-/* === Нижняя строка: дерби/голоса/CTA — только если есть что показать. === */
-.mrow__footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: .5rem;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--color-base-300);
-    flex-wrap: wrap;
-}
-.mrow__footer-meta {
-    display: flex;
-    align-items: center;
-    gap: .6rem;
-    font-size: .6875rem;
-    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
-    min-width: 0;
-}
-.mrow__cta {
-    position: relative;
-    z-index: 1;
-}
-
-/* === Дополнительные блоки карточки — те же токены, без новых цветов. === */
-
-/* Тег интриги и «Ваша команда». */
-.mrow__tags-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: .4rem;
-    margin-bottom: 8px;
-}
-.mrow__intrigue-tag, .mrow__followed-badge, .mrow__reaction-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: .3rem;
-    font-size: .625rem;
-    font-weight: 700;
-    padding: .2rem .5rem;
-    border-radius: 9999px;
-    white-space: nowrap;
-}
-.mrow__intrigue-tag {
-    background: color-mix(in oklab, var(--color-secondary) 14%, transparent);
-    color: var(--color-secondary);
-}
-.mrow__followed-badge {
-    background: color-mix(in oklab, var(--color-error) 12%, transparent);
-    color: var(--color-error);
-}
-/* «Матч тура» по реакциям — золотой тон. */
-.mrow__reaction-tag {
-    background: color-mix(in oklab, var(--color-warning) 16%, transparent);
-    color: var(--color-warning);
-}
-
-/* Форма команд / очные встречи — каждый факт отдельной строкой с иконкой. */
-.mrow__context {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 8px;
-}
-/* Факты: мелкий шрифт, перенос вместо обрезки, иконка по верху строки. */
-.mrow__context-row {
-    display: flex;
-    align-items: flex-start;
-    gap: .35rem;
-    min-width: 0;
-    font-size: .625rem;
-    font-weight: 600;
-    line-height: 1.35;
-    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
-}
-.mrow__context-row .ti {
-    flex-shrink: 0;
-    font-size: .75rem;
-    margin-top: 1px;
-    color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
-}
-.mrow__context-row span {
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-.mrow__context-row strong {
-    color: var(--color-base-content);
-    font-weight: 700;
-}
-
-/* Главный момент завершённого матча. */
-.mrow__key-moment {
-    display: flex;
-    align-items: flex-start;
-    gap: .35rem;
-    font-size: .6875rem;
-    font-weight: 600;
-    line-height: 1.35;
-    color: var(--color-base-content);
-    margin-top: 10px;
-}
-.mrow__key-moment span { min-width: 0; overflow-wrap: anywhere; }
-.mrow__key-moment .ti { flex-shrink: 0; margin-top: 1px; color: var(--mrow-accent, var(--color-success)); }
-
-/* Игрок матча: аватар + подпись одной строкой. */
-.mrow__hero {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    margin-top: 10px;
-}
-.mrow__hero-photo, .mrow__hero-photo-fallback {
-    width: 28px;
-    height: 28px;
-    border-radius: 9999px;
-    flex-shrink: 0;
-    object-fit: cover;
-}
-.mrow__hero-photo-fallback {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: color-mix(in oklab, var(--color-warning) 16%, transparent);
-    color: var(--color-warning);
-    font-size: .6875rem;
-    font-weight: 800;
-}
-.mrow__hero-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.mrow__hero-label {
-    display: flex;
-    align-items: center;
-    gap: .25rem;
-    font-size: .5625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .03em;
-    color: var(--color-warning);
-}
-.mrow__hero-name {
-    font-size: .75rem;
-    font-weight: 700;
-    color: var(--color-base-content);
-    overflow-wrap: anywhere;
-}
-
-/* Мини-ДНК: чипы-трейты. */
-.mrow__dna-traits {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 8px;
-}
-.mrow__dna-caption {
-    font-size: .5625rem;
-    font-weight: 600;
-    color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
-}
-.mrow__dna-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .3rem;
-}
-.mrow__dna-chip {
-    font-size: .625rem;
-    font-weight: 600;
-    padding: .15rem .5rem;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
-    color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
-}
-
-/* Индекс сенсации. */
-/* Тот же размер и перенос, что у остальных фактов. */
-.mrow__sensation {
-    display: flex;
-    align-items: flex-start;
-    gap: .35rem;
-    font-size: .625rem;
-    font-weight: 700;
-    line-height: 1.35;
-    color: var(--color-error);
-    margin-top: 8px;
-}
-.mrow__sensation span, .mrow__table-impact span { min-width: 0; overflow-wrap: anywhere; }
-.mrow__sensation .ti, .mrow__table-impact .ti { flex-shrink: 0; margin-top: 1px; }
-
-/* «Изменил таблицу» */
-.mrow__table-impact {
-    display: flex;
-    align-items: flex-start;
-    gap: .35rem;
-    font-size: .625rem;
-    font-weight: 600;
-    line-height: 1.35;
-    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
-    margin-top: 8px;
-}
-
-/* Вовлечённость в прогноз — в строке со счётчиком голосов. */
-.mrow__engagement {
-    font-size: .6875rem;
-    font-weight: 600;
-    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
-}
-
-@keyframes mrow-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: .35; transform: scale(.6); }
-}
+/* Пометка под строкой — по центру, тихо. */
+.mx__note { grid-column: 1 / -1; justify-self: center; display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
+    font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); text-align: center; }
+.mx__note .ti { font-size: .85rem; }
+.mx__note--done { color: var(--color-success); }
+.mx__note--cta { color: var(--color-primary); padding: 5px 12px; border-radius: 999px; background: color-mix(in oklab, var(--color-primary) 10%, transparent); cursor: pointer; }
+.mx__note--cta:hover { background: color-mix(in oklab, var(--color-primary) 16%, transparent); }
 
 @media (max-width: 480px) {
-    .mrow { padding: 12px 14px; border-radius: 18px; }
-    .mrow__team-name { font-size: .8125rem; }
-    .mrow__crest, .mrow__crest-fallback { width: 22px; height: 22px; }
-    .mrow__center { min-width: 44px; font-size: 1rem; }
+    .mx { grid-template-columns: minmax(0, 1fr) 4.5rem minmax(0, 1fr); column-gap: 8px; padding: 13px 14px; }
+    .mx + .mx::before { left: 14px; right: 14px; }
+    .mx__name { font-size: .875rem; }
+    .mx__logo { width: 24px; height: 24px; }
+    .mx__team { gap: 8px; }
+    .mlist__day { padding: 12px 14px 6px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .mrow, .mrow__arrow { transition: none !important; }
-    .mrow:hover { transform: none !important; }
-    .mrow:hover .mrow__arrow { transform: none !important; }
-    .mrow__live-dot { animation: none !important; }
-}
+/* Live-точка в заголовке «Сейчас в игре» (главная). */
+.mrow__live-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--color-error); animation: mrow-pulse 1.4s ease-in-out infinite; display: inline-block; }
+@keyframes mrow-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .mrow__live-dot { animation: none; } }
 
-/* ============================================================
-   Компактная карточка (как Apple Sports / FotMob): команды друг под другом, счёт справа,
-   контекст одной строкой, прогноз — тонкий переключатель.
-   ============================================================ */
-.mrow { padding: 12px 14px; border-radius: 18px; }
-.mrow__top { margin-bottom: 8px; }
-.mrow__meta { font-size: .72rem; }
-.mrow__body { display: flex; align-items: center; gap: 10px; }
-.mrow__teams { flex: 1; min-width: 0; display: grid; gap: 6px; }
-.mrow__t { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
-.mrow__t .mrow__crest, .mrow__t .mrow__crest-fallback { width: 22px; height: 22px; }
-.mrow__t .mrow__team-name { font-size: .9375rem; font-weight: 600; line-height: 1.2; }
-.mrow__score { min-width: 1.4rem; text-align: right; font-size: 1.0625rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.mrow__t.is-winner .mrow__team-name, .mrow__t.is-winner .mrow__score { font-weight: 800; }
-.mrow__t.is-loser .mrow__team-name, .mrow__t.is-loser .mrow__score { color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
-.mrow--live .mrow__score { color: var(--color-error); }
-.mrow__side-ico { font-size: 1.1rem; opacity: .4; }
-.mrow__arrow { flex: none; }
+/* Подробности под строкой: тихие строки текста с иконками, по центру. */
+.mx__info { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 10px; text-align: center; }
+.mx__line { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; max-width: 100%;
+    font-size: .78rem; line-height: 1.35; color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
+.mx__line .ti { font-size: .9rem; opacity: .75; }
+.mx__line b { font-weight: 650; color: color-mix(in oklab, var(--color-base-content) 85%, transparent); }
+.mx__line em { font-style: normal; opacity: .45; margin: 0 2px; }
+.mx__line--accent { color: var(--color-secondary); font-weight: 600; }
+.mx__line--accent .ti { opacity: 1; }
+.mx__line--hero img { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
+.mx__votes { grid-column: 1 / -1; justify-self: center; display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
+    font-size: .72rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
 
-.mrow__ctx { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: .75rem; line-height: 1.3;
-  color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
-.mrow__ctx-item { display: inline-flex; align-items: center; gap: 4px; }
-.mrow__ctx-item b { color: var(--color-base-content); font-weight: 650; }
-.mrow__ctx-item .ti { font-size: .85rem; }
-
-/* Прогноз: сегментированный переключатель. */
-.mpred { margin-top: 10px; }
-.mpred__seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; border-radius: 12px;
-  background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
-.mpred__opt { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 2rem; padding: 0 .4rem; border-radius: 9px;
-  font-size: .78rem; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
-  transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
-.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-100) 70%, transparent); }
+/* Прогноз в строке: три лёгкие кнопки. */
+.mx .mpred { grid-column: 1 / -1; width: 100%; max-width: 26rem; justify-self: center; margin-top: 12px; }
+.mpred__seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mpred__opt { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 2.3rem; padding: 0 .5rem; border-radius: 999px;
+    font-size: .8125rem; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 72%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-base-content) 10%, transparent); transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-content) 4%, transparent); }
 .mpred__opt:disabled { cursor: default; }
 .mpred__label { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }
 .mpred__label .ti { font-size: .8rem; }
-.mpred__pct { font-weight: 600; opacity: .75; }
-.mpred__opt.is-mine { background: var(--color-base-100); color: var(--color-primary); box-shadow: 0 1px 3px rgb(0 0 0 / .12), 0 0 0 1px color-mix(in oklab, var(--color-primary) 25%, transparent); }
-.mpred__opt.is-mine .mpred__pct { opacity: 1; }
-.mpred__opt.is-result { background: color-mix(in oklab, var(--color-success) 16%, var(--color-base-100)); color: var(--color-success); }
-:root[data-theme="dark"] .mpred__opt.is-mine { background: color-mix(in oklab, var(--color-primary) 22%, var(--color-base-100)); }
-.mpred .dx-predicted-row { margin-top: 8px; }
+.mpred__pct { font-weight: 600; opacity: .6; }
+.mpred__opt.is-mine { color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 9%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 50%, transparent); }
+.mpred__opt.is-mine .mpred__pct { opacity: .9; }
+.mpred__opt.is-result { color: var(--color-success); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-success) 50%, transparent); }
+.mx .dx-predicted-row { margin-top: 8px; }
 
-/* Нижняя строка компактнее. */
-.mrow__footer { margin-top: 10px; padding-top: 8px; }
-.dx-match-grid { display: grid; gap: .6rem; align-items: start; }
-@media (min-width: 768px) { .dx-match-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; } }
-.dx-match-grid > :only-child { grid-column: 1 / -1; }
-.dx-match-grid > .text-center { grid-column: 1 / -1; }
-/* В сетке карточки ряда одной высоты, прогноз — у нижнего края. */
-.dx-match-grid { align-items: stretch; }
-.dx-match-grid > .mrow { display: flex; flex-direction: column; }
-.dx-match-grid > .mrow > .mpred { margin-top: auto; padding-top: 10px; }
-
-/* ============================================================
-   ТАБЛО: две команды с гербами по бокам, в центре крупно время или счёт.
-   Перекрывает «компактный» вариант выше. Спокойные отступы, прогноз — удобный переключатель.
-   ============================================================ */
-.mrow { padding: 16px 18px 18px; border-radius: 22px; }
-.mrow--scheduled .mrow__badge { display: none; } /* время и день — на табло */
-.mrow__top { margin-bottom: 14px; }
-.mrow__board { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
-.mrow__side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; text-align: center; }
-.mrow__logo { width: 48px; height: 48px; object-fit: contain; }
-.mrow__logo--fallback { display: grid; place-items: center; border-radius: 50%; font-size: 1.1rem; font-weight: 800;
-  background: color-mix(in oklab, var(--color-base-content) 7%, transparent); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
-.mrow__name { font-size: .9375rem; font-weight: 650; line-height: 1.2; overflow-wrap: anywhere; text-wrap: balance; }
-.mrow__side.is-winner .mrow__name { font-weight: 800; }
-.mrow__side.is-loser .mrow__name { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
-.mrow__mid { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 6.5rem; padding: 0 4px; }
-.mrow__big { font-size: 1.75rem; font-weight: 800; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--color-base-content); white-space: nowrap; }
-.mrow__big i { font-style: normal; margin: 0 .2em; opacity: .35; }
-.mrow__big--time { font-size: 1.5rem; }
-.mrow--live .mrow__big { color: var(--color-error); }
-.mrow__small { font-size: .75rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); text-align: center; white-space: nowrap; }
-.mrow--live .mrow__small { color: var(--color-error); }
-.mrow__mid-ico { font-size: 1.5rem; opacity: .4; }
-.mrow__arrow { display: none; }
-
-.mrow__ctx { justify-content: center; gap: 6px; margin-top: 14px; font-size: .78rem; }
-.mrow__ctx-item { padding: 5px 10px; border-radius: 999px; background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
-
-.mpred { margin-top: 14px; }
-.mpred__seg { gap: 6px; padding: 0; background: none; }
-.mpred__opt { min-height: 2.75rem; border-radius: 14px; font-size: .875rem; gap: 8px;
-  background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
-.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-content) 8%, transparent); }
-.mpred__opt.is-mine { background: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100)); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 55%, transparent); }
-.mpred__opt.is-result { box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-success) 55%, transparent); }
-
-/* Главная: одна колонка — карточки дышат; на очень широком экране две. */
-.dx-match-grid { grid-template-columns: minmax(0, 1fr) !important; gap: .85rem; }
-@media (min-width: 1400px) { .dx-match-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-@media (max-width: 400px) { .mrow__logo { width: 40px; height: 40px; } .mrow__mid { min-width: 5.5rem; } .mrow__big { font-size: 1.5rem; } }
-@media (max-width: 640px) {
-  .mrow__ctx { gap: 3px 12px; margin-top: 12px; }
-  .mrow__ctx-item { padding: 0; background: none; }
-}
-.mrow__key-moment, .mrow__table-impact, .mrow__sensation { justify-content: center; text-align: center; margin-top: 12px; }
-
-/* Спокойнее: меньше заливок и рамок, контекст — строкой текста, прогноз — лёгкие кнопки с тонкой обводкой. */
-.mrow { border-color: color-mix(in oklab, var(--color-base-content) 7%, transparent); box-shadow: 0 1px 2px rgb(0 0 0 / .03); }
-.mrow:hover, .mrow:focus-visible { transform: none; box-shadow: 0 6px 20px -12px rgb(20 30 80 / .25); border-color: color-mix(in oklab, var(--color-base-content) 12%, transparent); }
-.mrow__ctx { gap: 2px 14px; margin-top: 12px; }
-.mrow__ctx-item { padding: 0; background: none; }
-.mrow__ctx-item .ti { opacity: .7; }
-.mpred__opt { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-base-content) 10%, transparent); min-height: 2.6rem; }
-.mpred__opt:not(:disabled):hover { background: color-mix(in oklab, var(--color-base-content) 4%, transparent); }
-.mpred__pct { opacity: .6; }
-.mrow__intrigue-tag, .mrow__reaction-tag, .mrow__followed-badge { font-size: .6875rem; }
+/* Реакции в строке сыгранного матча — та же лёгкая подача. */
+.mx .dx-react { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 30rem; margin-top: 12px; padding: 0; border: 0; background: none; }
+.mx .dx-react__label { display: block; text-align: center; font-size: .72rem; font-weight: 600; margin-bottom: 6px; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.mx .dx-react__options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mx .dx-react__btn { min-height: 2.3rem; border-radius: 999px; font-size: .78rem; padding: 0 .5rem; flex-direction: row; gap: 5px; }
+.mx .dx-react__btn { flex-direction: row !important; flex-wrap: wrap; justify-content: center; text-align: center; line-height: 1.15; padding: .35rem .5rem !important; }
+.mx .dx-react__btn .ti { font-size: .85rem; }
+@media (max-width: 480px) { .mx .dx-react__btn { font-size: .72rem; gap: 3px; } .mx .dx-react__btn .ti { display: none; } }
