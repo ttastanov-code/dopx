@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 from datetime import datetime, time, timedelta
 from datetime import timezone as dt_timezone
 
@@ -217,6 +218,59 @@ def _button_rows(post) -> list:
     if url and not any("t.me/" + bot_username() in str(b[1]) for r in rows for b in r):
         rows.append([("📱 DOPX в Telegram: оценки и прогнозы", url)])
     return rows
+
+
+def _current_link(url: str) -> str:
+    """Старые ссылки в кнопках опубликованных постов → текущие: прямая ссылка на Mini App и адрес сайта."""
+    from urllib.parse import parse_qs, urlparse
+
+    from fanbot.services import bot_username
+
+    u = urlparse(url)
+    bot = bot_username()
+    if u.netloc == "t.me" and bot and u.path.lower().startswith(f"/{bot.lower()}/"):
+        start = (parse_qs(u.query).get("startapp") or ["channel"])[0]
+        return fan_bot_url(start) or url
+    public = urlparse(settings.ADMIN_BOT_PUBLIC_URL)
+    ours = u.netloc in ("dopx.kz", "www.dopx.kz") or u.netloc.endswith((".ngrok-free.dev", ".ngrok-free.app", ".devtunnels.ms", ".trycloudflare.com"))
+    if u.scheme == "https" and ours and u.netloc != public.netloc:
+        return u._replace(scheme=public.scheme, netloc=public.netloc).geturl()
+    return url
+
+
+def refresh_links(force: bool = False, limit: int = 200) -> int:
+    """Адрес сайта или Mini App сменился — пересобрать кнопки опубликованных постов (и закрепа). Сколько обновлено."""
+    from django.core.cache import cache
+
+    from fanbot.services import miniapp_link
+
+    sig = f"{settings.ADMIN_BOT_PUBLIC_URL}|{miniapp_link('x')}"
+    if not configured() or (not force and cache.get("adminbot:links_sig") == sig):
+        return 0
+    done = 0
+    posts = (ChannelPost.objects.filter(status="published", message_id__isnull=False, poll__isnull=True)
+             .order_by("-published_at")[:limit])
+    for post in posts:
+        new = [[b[0], _current_link(str(b[1]))] if len(b) == 2 else b for b in (post.buttons or [])]
+        if new != post.buttons:
+            post.buttons = new
+            post.save(update_fields=["buttons"])
+        for attempt in range(3):
+            try:
+                tg.call("editMessageReplyMarkup", chat_id=channel_id(), message_id=post.message_id,
+                        reply_markup=tg.keyboard(_button_rows(post)))
+                done += 1
+                break
+            except tg.TelegramError as e:
+                if getattr(e, "retry_after", None) and attempt < 2:  # лимит Telegram — подождать и повторить
+                    _time.sleep(min(e.retry_after, 60) + 1)
+                    continue
+                if "not modified" not in str(e.description).lower():
+                    logger.info("adminbot: кнопки поста %s не обновлены: %s", post.pk, e.description)
+                break
+        _time.sleep(0.4)
+    cache.set("adminbot:links_sig", sig, None)
+    return done
 
 
 def _send(post) -> dict:

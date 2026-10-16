@@ -95,7 +95,7 @@
                     <h3 class="font-extrabold text-base md:text-lg">Рейтинги скрыты до вашей оценки</h3>
                 </div>
                 <div class="p-4 sm:p-5">
-                    <p class="text-sm opacity-70 leading-relaxed">Пока идёт голосование, оценки игроков, команд, тренеров и судьи видны только тем, кто уже оценил матч. Так никто не подстраивается под чужие цифры. После закрытия голосования рейтинги откроются всем.</p>
+                    <p class="text-sm opacity-70 leading-relaxed">Пока идёт голосование, оценки игроков, команд, тренеров и судьи видны только тем, кто уже оценил матч. После закрытия голосования рейтинги откроются всем.</p>
                     {% if voting_open and user.is_authenticated %}
                     <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-dopx-rate"></i> Оценить матч</a>
                     {% elif voting_open %}

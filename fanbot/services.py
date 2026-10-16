@@ -36,6 +36,10 @@ def miniapp_link(start: str = "") -> str:
     """Ссылка, открывающая Mini App в Telegram; без настроенного приложения — пусто."""
     if not (enabled() and bot_username() and settings.FAN_BOT_APP_NAME):
         return ""
+    from urllib.parse import urlparse
+
+    if urlparse(settings.SITE_URL).hostname not in settings.MINIAPP_STABLE_HOSTS:
+        return ""  # сайт на временном адресе — в @BotFather мог остаться старый
     return f"https://t.me/{bot_username()}/{settings.FAN_BOT_APP_NAME}" + (f"?startapp={start}" if start else "")
 
 

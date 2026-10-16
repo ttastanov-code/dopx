@@ -23,6 +23,12 @@ _RING_STYLE_CONFIDENT = 'outline: 2px solid var(--color-success); outline-offset
 _RING_STYLE_LOW_CONFIDENCE = 'outline: 2px solid var(--color-warning); outline-offset: 2px;'
 
 
+def _short_name(slot) -> str:
+    """Как игрока знают болельщики (Player.short_name); для тренера, судьи или без связи — последнее слово ФИО."""
+    person = getattr(slot, 'occupant', None)
+    return getattr(person, 'short_name', '') or (slot.occupant_name.split() or [''])[-1]
+
+
 def _slot_to_card(slot, slot_code):
     """Слот (или его отсутствие) -> плоский dict для шаблона."""
     label = slot_label(slot_code)
@@ -36,7 +42,7 @@ def _slot_to_card(slot, slot_code):
         }
     return {
         'slot_code': slot_code, 'label': label, 'filled': True,
-        'occupant_name': slot.occupant_name, 'occupant_team_name': slot.occupant_team_name,
+        'occupant_name': slot.occupant_name, 'occupant_short': _short_name(slot), 'occupant_team_name': slot.occupant_team_name,
         'occupant_photo_url': slot.occupant_photo_url, 'occupant_profile_url': slot.occupant_profile_url,
         'season_score': slot.season_score, 'matches_count': slot.matches_count,
         'votes_count': slot.votes_count, 'is_confident': slot.is_confident,

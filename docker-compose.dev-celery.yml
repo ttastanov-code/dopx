@@ -5,8 +5,11 @@
 # через host.docker.internal. Не запускать вместе с docker-compose.yml
 # и с локальным celery из app_venv.
 #
-#   docker compose -f docker-compose.dev-celery.yml up --build
+#   docker compose -f docker-compose.dev-celery.yml up -d --build
 #   docker compose -f docker-compose.dev-celery.yml down
+#
+# Код проекта подключён в контейнеры как есть (.:/app), воркеры перезапускаются сами при изменении .py
+# (watchfiles) — правки сразу доходят до постов канала, рассылок и карточек, пересобирать не нужно.
 
 services:
   celery_worker_dev:
@@ -14,7 +17,7 @@ services:
       context: .
       dockerfile: Dockerfile
     # concurrency=2 — при 4 тяжёлые задачи ловили OOM.
-    command: celery -A dopx worker -l info --concurrency=2 -Q realtime,celery
+    command: watchfiles --filter python "celery -A dopx worker -l info --concurrency=2 -Q realtime,celery" /app
     env_file:
       - .env
     environment:
@@ -29,6 +32,7 @@ services:
       # host-gateway — на случай нестандартной конфигурации Docker.
       - "host.docker.internal:host-gateway"
     volumes:
+      - .:/app
       - ./media:/app/media
       - ./logs:/app/logs
       - ./data:/app/data
@@ -38,7 +42,7 @@ services:
       context: .
       dockerfile: Dockerfile
     # Только live-опрос и пуши — не ждут за долгими задачами.
-    command: celery -A dopx worker -l info --concurrency=2 -Q realtime,realtime_hb -n realtime@%h
+    command: watchfiles --filter python "celery -A dopx worker -l info --concurrency=2 -Q realtime,realtime_hb -n realtime@%h" /app
     env_file:
       - .env
     environment:
@@ -53,6 +57,7 @@ services:
       # host-gateway — на случай нестандартной конфигурации Docker.
       - "host.docker.internal:host-gateway"
     volumes:
+      - .:/app
       - ./media:/app/media
       - ./logs:/app/logs
       - ./data:/app/data
@@ -61,7 +66,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A dopx beat -l info --schedule=/app/celerybeat/celerybeat-schedule
+    command: watchfiles --filter python "celery -A dopx beat -l info --schedule=/app/celerybeat/celerybeat-schedule" /app
     env_file:
       - .env
     environment:
@@ -74,6 +79,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - .:/app
       # Свой volume расписания beat, отдельный от прод-стека.
       - celerybeat_data_dev:/app/celerybeat
       - ./logs:/app/logs

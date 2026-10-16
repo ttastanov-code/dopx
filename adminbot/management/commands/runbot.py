@@ -49,6 +49,15 @@ class Command(BaseCommand):
         self.fixed = role != "auto"
         self.role = role if self.fixed else self.decide()
         self.stdout.write(f"Бот запущен: {handlers.ENV_LABEL[handlers.ENV]}, роль — {self.role}.")
+        if self.role == "listener":
+            # Адрес сайта сменился (туннель, домен) — кнопки опубликованных постов обновляются сами.
+            try:
+                from adminbot.channel import refresh_links
+                n = refresh_links()
+                if n:
+                    self.stdout.write(f"Кнопки постов канала обновлены под новый адрес: {n}.")
+            except Exception:
+                logger.exception("adminbot: не удалось обновить кнопки постов")
         last_check = time.monotonic()
         self.last_alerts = 0.0
         self.last_escalation = 0.0

@@ -55,6 +55,8 @@ pillow==12.3.0
 resvg-py==0.5.0
 # Карточки для соцсетей: HTML → PNG в Chromium (core/cards_html.py).
 playwright==1.58.0
+# Автоперезапуск dev-воркеров Celery при изменении кода (docker-compose.dev-celery.yml).
+watchfiles==1.0.4
 pluggy==1.6.0
 # Web Push (notifications/services.py).
 pywebpush==2.0.3

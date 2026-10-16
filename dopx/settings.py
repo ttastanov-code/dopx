@@ -1083,8 +1083,8 @@ ADMIN_BOT_HEALTH_URL = os.getenv('ADMIN_BOT_HEALTH_URL', 'http://nginx/healthz/'
 ADMIN_BOT_CHANNEL_ID = os.getenv('ADMIN_BOT_CHANNEL_ID', '')
 # Другие чаты, где боту можно быть (через запятую): например, прод-канал в .env ноутбука. Из остальных он выходит.
 ADMIN_BOT_ALLOWED_CHATS = os.getenv('ADMIN_BOT_ALLOWED_CHATS', '')
-# Адрес сайта в постах канала: канал публичный, ссылки всегда на боевой домен (с ноутбука тоже).
-ADMIN_BOT_PUBLIC_URL = os.getenv('ADMIN_BOT_PUBLIC_URL', 'https://dopx.kz')
+# Адрес сайта в постах канала. По умолчанию — тот же SITE_URL (один адрес на всё), без https — боевой домен.
+ADMIN_BOT_PUBLIC_URL = os.getenv('ADMIN_BOT_PUBLIC_URL') or (SITE_URL if SITE_URL.startswith('https://') else 'https://dopx.kz')
 # Публичный бот для болельщиков (отдельный от служебного): вход через Telegram, уведомления, Mini App.
 # Сырые массовые события аналитики (просмотры, показы) храним ANALYTICS_RAW_DAYS, итоги дня — навсегда.
 # Остальные события — ANALYTICS_KEEP_DAYS; 0 — не удалять никогда.
@@ -1095,6 +1095,9 @@ FAN_BOT_TOKEN = os.getenv('FAN_BOT_TOKEN', '')
 FAN_BOT_USERNAME = os.getenv('FAN_BOT_USERNAME') or 'dopx_kz_bot'
 # Короткое имя Mini App из @BotFather (/newapp): ссылки вида t.me/<бот>/<имя>.
 FAN_BOT_APP_NAME = os.getenv('FAN_BOT_APP_NAME', '')
+# Прямые ссылки на Mini App (t.me/<бот>/<имя>) ведут на адрес из @BotFather, а его API не меняет.
+# Поэтому они включаются только на постоянном домене; на туннеле ссылки ведут в чат бота (адрес — из SITE_URL).
+MINIAPP_STABLE_HOSTS = [h.strip() for h in os.getenv('MINIAPP_STABLE_HOSTS', 'dopx.kz,www.dopx.kz').split(',') if h.strip()]
 # Claude API: тексты постов канала (без ключа или при ошибке — шаблоны) и, по желанию, вопросы боту.
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ADMIN_BOT_AI_MODEL = os.getenv('ADMIN_BOT_AI_MODEL', 'claude-opus-5-5')
@@ -1111,6 +1114,9 @@ if 'test' in sys.argv or 'pytest' in sys.modules:
     FAN_BOT_TOKEN = ''
     FAN_BOT_APP_NAME = ''
     GEMINI_API_KEY = ''
+
+if DEBUG:
+    MIDDLEWARE.insert(0, 'dopx.middleware.DevAssetCacheMiddleware')
 
 # Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.
 if IS_PRODUCTION and os.getenv('SKIP_PRODUCTION_CHECKS') != 'True':

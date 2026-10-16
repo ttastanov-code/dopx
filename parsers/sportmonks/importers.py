@@ -165,6 +165,32 @@ def _apply_known_name_corrections(
     return result_first, result_last
 
 
+_NICK_ENDINGS = ("иньо", "инью", "инья", "ито", "итос", "иньос")
+
+
+def _norm(word: str) -> str:
+    return word.lower().replace("э", "е").replace("ё", "е").replace("й", "и")[:3]
+
+
+def nickname_from(data: Dict, our_words: list | None = None) -> str:
+    """Прозвище, под которым игрока знают (Жоржиньо, Рикардиньо, Эдмилсон) из display_name/common_name одним словом.
+    Совпадает с одним из слов нашего ФИО — берём наше написание; иначе только явные прозвища (-иньо, -ито).
+    Пусто — прозвища нет, короткое имя подберёт Player.short_name."""
+    last = (data.get("lastname") or "").strip().lower()
+    words = our_words or []
+    for key in ("display_name", "common_name"):
+        value = (data.get(key) or "").strip()
+        if not value or " " in value or "." in value or value.lower() == last:
+            continue
+        nick = value if _is_clean_cyrillic(value) else transliterate_name(value)
+        if nick.lower().endswith(_NICK_ENDINGS):
+            return nick
+        same = next((w for w in words if _norm(w) == _norm(nick)), None)
+        if same:
+            return same
+    return ""
+
+
 def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, str, str]:
     """Возвращает (first_name, last_name, name_source).
 
@@ -535,6 +561,9 @@ def get_or_create_player(
     if existing is not None and not any(player_data.get(k) for k in FULL_NAME_KEYS):
         for key in ("first_name", "last_name", "name_source"):
             defaults.pop(key)
+    nickname = nickname_from(player_data, f"{first_name} {last_name}".split())
+    if nickname:
+        defaults["known_as"] = nickname
     if sportmonks_photo_url(player_data):
         defaults["photo_url"] = sportmonks_photo_url(player_data)
     if is_more_recent and "position_id" in player_data:

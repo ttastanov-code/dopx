@@ -3173,3 +3173,27 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 @keyframes dx-ready-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 55%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
 @media (prefers-reduced-motion: reduce) { .dx-share__alt.is-ready { animation: none; outline: 2px solid var(--color-primary); } }
 .dx-showcase__edit { display: inline-block; margin-top: .5rem; font-size: .75rem; font-weight: 600; color: var(--color-primary); }
+
+/* ---- Игрок на поле сборной: одинаково для всех, оценка — бейджем на фото ---- */
+.xi-p { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; min-width: 0; text-align: center; }
+.xi-p__ava { position: relative; display: inline-block; }
+.xi-p__img { width: 3.5rem; height: 3.5rem; font-size: .9rem; }
+@media (min-width: 768px) { .xi-p__img { width: 4.25rem; height: 4.25rem; font-size: 1rem; } }
+.xi-p__score { position: absolute; right: -6px; bottom: -4px; min-width: 2rem; padding: 1px 6px; border-radius: 999px; font-size: .7rem; font-weight: 800;
+  font-variant-numeric: tabular-nums; color: #0b2a1d; background: #6ee7a8; box-shadow: 0 0 0 2px #17324a; }
+.xi-p__name { margin-top: 4px; max-width: 100%; font-size: .78rem; font-weight: 650; line-height: 1.2; color: rgb(255 255 255 / .95); overflow-wrap: anywhere; }
+.xi-p__name:hover { opacity: .75; }
+.xi-p__full { display: none; }
+.xi-p__team { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-size: .66rem; line-height: 1.2; color: rgb(255 255 255 / .5); overflow-wrap: anywhere; }
+.xi-p__info { color: rgb(255 255 255 / .7); }
+@media (min-width: 768px) {
+  .xi-p__full { display: inline; } .xi-p__short { display: none; }
+  .xi-p__name { font-size: .875rem; } .xi-p__team { font-size: .72rem; }
+}
+/* Ряды: на телефоне 4–5 игроков без шахматки — фамилии короткие и помещаются. */
+@media (max-width: 767px) {
+  .xi-row--stagger { grid-template-columns: repeat(var(--xi-n), minmax(0, 1fr)); row-gap: 0; }
+  .xi-row--stagger > * { grid-column: auto !important; grid-row: auto !important; }
+  .xi-row--stagger .xi-p__img, .xi-row--compact .xi-p__img { width: 3rem; height: 3rem; font-size: .8rem; }
+  .xi-row--stagger .xi-p__name, .xi-row--compact .xi-p__name { font-size: .7rem; }
+}

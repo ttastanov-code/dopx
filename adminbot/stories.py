@@ -259,7 +259,9 @@ def preview_facts(tour, matches: list) -> tuple[dict, object]:
         recent = _recent_meetings(m)
         intrigue = describe_intrigue(m, home_position=pos.get(m.home_team_id), away_position=pos.get(m.away_team_id),
                                      last_meeting=recent[0] if recent else None)
-        row = {"хозяева": m.home_team.name, "гости": m.away_team.name, "когда": m.kickoff_text("%d.%m")}
+        local = timezone.localtime(m.start_time)
+        row = {"хозяева": m.home_team.name, "гости": m.away_team.name, "когда": m.kickoff_text("%d.%m"),
+               "день": _day_label(local), "время": local.strftime("%H:%M") if m.kickoff_known else "время уточняется"}
         if pos.get(m.home_team_id) and pos.get(m.away_team_id):
             row["места_в_таблице"] = [pos[m.home_team_id], pos[m.away_team_id]]
         for side, team in (("форма_хозяев", m.home_team), ("форма_гостей", m.away_team)):
@@ -288,27 +290,42 @@ def preview_facts(tour, matches: list) -> tuple[dict, object]:
     return out, main
 
 
+_WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+_MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+
+
+def _day_label(dt) -> str:
+    """«Пятница, 17 октября» — заголовок дня в анонсе тура."""
+    return f"{_WEEKDAYS[dt.weekday()].capitalize()}, {dt.day} {_MONTHS[dt.month - 1]}"
+
+
 def preview_template(facts: dict) -> str:
+    """Анонс тура: матчи по дням; у матча строка «время · Хозяева — Гости» и строка с главным фактом курсивом."""
     rng = _rng(f"preview:{facts['тур']}:{len(facts['матчи'])}")
     head = f"{facts['тур']}-й тур КПЛ" if facts["тур"] else "Ближайшие матчи КПЛ"
     title = rng.choice([f"🗓 {head}: что на кону", f"🗓 {head} — главное перед игрой", f"🗓 Впереди {head}"])
     parts = [f"<b>{_esc(title)}</b>"]
-    lines = []
+    day, block = None, []
     for r in facts["матчи"]:
-        line = f"• <b>{_esc(r['хозяева'])} — {_esc(r['гости'])}</b>, {_esc(r['когда'])}"
+        if r.get("день") != day:
+            if block:
+                parts.append("\n\n".join(block))
+            day, block = r.get("день"), [f"<b>{_esc(r.get('день') or r['когда'])}</b>"]
+        line = f"{_esc(r.get('время') or r['когда'])} · <b>{_esc(r['хозяева'])} — {_esc(r['гости'])}</b>"
         extra = []
         if r.get("интрига"):
             extra.append(r["интрига"])
         if r.get("места_в_таблице"):
-            extra.append(f"{r['места_в_таблице'][0]}-е место против {r['места_в_таблице'][1]}-го")
+            extra.append(f"{r['места_в_таблице'][0]}-е и {r['места_в_таблице'][1]}-е места в таблице")
         if r.get("прогнозы_%"):
             fav = max(r["прогнозы_%"], key=r["прогнозы_%"].get)
             if fav != "ничья":
-                extra.append(f"прогнозы: {fav} — {r['прогнозы_%'][fav]}%")
+                extra.append(f"{r['прогнозы_%'][fav]}% болельщиков за {fav}")
         if extra:
-            line += "\n   " + _esc(" · ".join(extra))
-        lines.append(line)
-    parts.append("\n".join(lines))
+            line += "\n<i>" + _esc(" · ".join(extra)) + "</i>"
+        block.append(line)
+    if block:
+        parts.append("\n\n".join(block))
     quotes = [r for r in facts["матчи"] if r.get("эксперт")]
     if quotes:
         q = quotes[0]

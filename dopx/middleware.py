@@ -358,3 +358,18 @@ class HtmxLoginRedirectMiddleware:
             page = urlparse(request.headers.get("HX-Current-URL", "")).path or "/"
             quiet["HX-Redirect"] = f"{login_path}?{urlencode({'next': page})}"
         return quiet
+
+
+class DevAssetCacheMiddleware:
+    """Разработка: статика и медиа с Cache-Control на сутки — через туннель картинки и стили не качаются заново
+    на каждой странице (туннель без заголовка ставит no-store). Ссылки на статику с ?v=, обновления видны сразу."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        path = request.path
+        if response.status_code == 200 and (path.startswith("/static/") or path.startswith("/media/")):
+            response["Cache-Control"] = "public, max-age=86400"
+        return response

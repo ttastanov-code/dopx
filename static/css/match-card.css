@@ -251,3 +251,9 @@
 .mx--finished .mxr__btn.is-on b { color: var(--color-primary); }
 .mx--finished .mxr__btn .ti { display: none; }
 @media (max-width: 640px) { .mx--finished .mxr__btn { font-size: .66rem; } }
+
+/* Форма: пять последних результатов (старые → новые) — маленькие квадраты В/Н/П. */
+.mx__f5 { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: 1px; }
+.mx__f5 i { display: grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; font-style: normal; font-size: 9px; font-weight: 800; color: #fff; }
+.mx__f5-w { background: #22a565; } .mx__f5-d { background: #9aa0ad; } .mx__f5-l { background: #e25555; }
+@media (max-width: 480px) { .mx__f5 { display: flex; margin: 3px 0 0; } }

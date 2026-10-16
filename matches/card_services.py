@@ -169,6 +169,85 @@ def _attach_intrigue_and_pre_match(pre_match, stamp: str = "") -> None:
                                      if home_next else None)
         match.card_away_form_text = (_cached(f'card:form:{match.pk}:a:{stamp}', lambda: _season_form_text(match, match.away_team))
                                      if away_next else None)
+        # Последние 5 результатов (старые → новые) и факты матча строкой фишек.
+        home_form = _cached(f'card:form5:{match.pk}:h:{stamp}', lambda: _team_form(match, match.home_team)) if home_next else None
+        away_form = _cached(f'card:form5:{match.pk}:a:{stamp}', lambda: _team_form(match, match.away_team)) if away_next else None
+        match.card_home_form = home_form['last5'] if home_form else None
+        match.card_away_form = away_form['last5'] if away_form else None
+        match.card_facts = _match_facts(match, home_pos, away_pos, total_teams, match.card_intrigue, match.card_h2h,
+                                        {match.home_team_id: home_form and home_form['all'], match.away_team_id: away_form and away_form['all']})
+
+
+def _team_form(match, team) -> dict:
+    """Форма команды в сезоне до матча: last5 — [{r: W|D|L, title}] от старых к новым, all — результаты, новые сначала."""
+    from teams.services import _build_form_entries
+
+    played = list(
+        Match.objects.filter(Q(home_team=team) | Q(away_team=team), season=match.season, status='finished',
+                             start_time__lt=match.start_time).select_related('home_team', 'away_team').order_by('-start_time')
+    )
+    entries = _build_form_entries(team, played)
+    out = []
+    for e in reversed(entries[:5]):
+        word = {'W': 'победа', 'D': 'ничья', 'L': 'поражение'}[e['result']]
+        out.append({'r': e['result'], 'title': f"{word} {e['score_display']} — {e['opponent'].name}"})
+    return {'last5': out, 'all': [e['result'] for e in entries]}
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    n = abs(n) % 100
+    if 11 <= n <= 14:
+        return many
+    return one if n % 10 == 1 else few if 2 <= n % 10 <= 4 else many
+
+
+def _streak_fact(team_name: str, results: list[str]) -> str | None:
+    """Серия команды (новые сначала) одной фразой: от 3 побед/поражений/матчей без побед, от 5 без поражений."""
+    if not results:
+        return None
+    def run(pred):
+        n = 0
+        for r in results:
+            if not pred(r):
+                break
+            n += 1
+        return n
+    wins, losses = run(lambda r: r == 'W'), run(lambda r: r == 'L')
+    unbeaten, winless = run(lambda r: r != 'L'), run(lambda r: r != 'W')
+    if wins >= 3:
+        return f"{team_name}: {wins} {_plural(wins, 'победа', 'победы', 'побед')} подряд"
+    if unbeaten >= 5:
+        return f"{team_name} не проигрывает {unbeaten} {_plural(unbeaten, 'матч', 'матча', 'матчей')}"
+    if losses >= 3:
+        return f"{team_name}: {losses} {_plural(losses, 'поражение', 'поражения', 'поражений')} подряд"
+    if winless >= 3:
+        return f"{team_name}: {winless} {_plural(winless, 'матч', 'матча', 'матчей')} без побед"
+    return None
+
+
+def _match_facts(match, home_pos, away_pos, total_teams, intrigue, h2h, forms) -> list[dict]:
+    """Факты до матча — всё считается из данных: интрига, лидер против аутсайдера, серии, перевес в очных. hot — яркая фишка."""
+    facts = []
+    if intrigue:
+        facts.append({'text': intrigue, 'icon': 'ti-flame' if intrigue == 'Дерби' else 'ti-bolt', 'hot': True})
+    if home_pos and away_pos and total_teams and not intrigue:
+        top, bottom = min(home_pos, away_pos), max(home_pos, away_pos)
+        if top == 1 and bottom >= total_teams - 2:
+            leader = match.home_team if home_pos == 1 else match.away_team
+            facts.append({'text': f'Лидер {leader.name} против команды из зоны вылета', 'icon': 'ti-trophy', 'hot': True})
+    for team in (match.home_team, match.away_team):
+        res = forms.get(team.pk)
+        if not res:
+            continue
+        text = _streak_fact(team.name, res)
+        if text:
+            facts.append({'text': text, 'icon': 'ti-trending-down' if ('без побед' in text or 'поражени' in text) else 'ti-trending-up', 'hot': False})
+    if h2h and h2h['count'] >= 4:
+        if h2h['away_wins'] == 0 and h2h['home_wins'] >= 2:
+            facts.append({'text': f"{match.away_team.name}: ни одной победы над {match.home_team.name} в {h2h['count']} последних встречах", 'icon': 'ti-history', 'hot': False})
+        elif h2h['home_wins'] == 0 and h2h['away_wins'] >= 2:
+            facts.append({'text': f"{match.home_team.name}: ни одной победы над {match.away_team.name} в {h2h['count']} последних встречах", 'icon': 'ti-history', 'hot': False})
+    return facts
 
 
 def _season_form_text(match, team) -> str | None:

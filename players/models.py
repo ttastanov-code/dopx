@@ -9,6 +9,8 @@ class Player(BaseModel):
     """Футбольный игрок."""
     first_name = models.CharField(_('Имя'), max_length=120)
     last_name = models.CharField(_('Фамилия'), max_length=120)
+    # Как игрока называют болельщики (Эдмилсон, а не «де Паула Сантос Фильо»). Обычно пусто: short_name подбирает само.
+    known_as = models.CharField(_('Как его знают'), max_length=60, blank=True, default='')
     # Откуда взято ФИО (core/models.py::NAME_SOURCE_CHOICES). Пусто — неизвестно.
     name_source = models.CharField(
         _('Источник ФИО'), max_length=30, choices=NAME_SOURCE_CHOICES, blank=True, db_index=True,
@@ -81,6 +83,19 @@ class Player(BaseModel):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+    # Частицы португальских и бразильских фамилий: таких игроков зовут по имени (Эдмилсон, Рожерио).
+    _PARTICLES = {"де", "да", "ду", "дос", "дас", "до", "ди"}
+
+    @property
+    def short_name(self):
+        """Короткое имя для поля, карточек и списков: known_as, иначе имя при составной фамилии, иначе фамилия."""
+        if self.known_as:
+            return self.known_as
+        words = self.last_name.split()
+        if self.first_name and any(w.lower() in self._PARTICLES for w in words):
+            return self.first_name
+        return self.last_name or self.first_name
 
 
 class PlayerSidelined(BaseModel):

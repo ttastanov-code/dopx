@@ -1,0 +1,17 @@
+{% load ui_extras %}
+{% comment %}
+Игрок на поле сборной (тур / сезон): фото с оценкой на углу, фамилия (на ПК — полное имя), клуб — у всех одинаково.
+Контекст: card, score (оценка тура или сезона), compact (4–5 в ряд). Стили — css/ui.css (xi-p).
+{% endcomment %}
+<div class="xi-p">
+    <span class="xi-p__ava">
+        {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='xi-p__img' ring_style=card.ring_style %}
+        {% if card.filled and score is not None %}<span class="xi-p__score">{{ score|floatformat:1 }}</span>{% endif %}
+    </span>
+    {% if card.filled %}
+    <a href="{{ card.occupant_profile_url }}" class="xi-p__name" title="{{ card.occupant_name }}"><span class="xi-p__full">{{ card.occupant_name }}</span><span class="xi-p__short">{{ card.occupant_short|default:card.occupant_name }}</span></a>
+    <span class="xi-p__team">{{ card.occupant_team_name|default:"—" }}{% if card.explanation %}<span class="xi-p__info">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}</span>
+    {% else %}
+    <span class="xi-p__team">{{ card.label }}</span>
+    {% endif %}
+</div>
