@@ -3234,22 +3234,3 @@ a.dx-pager__btn:active { transform: scale(.94); }
   body.has-tabbar .dx-savebar .btn { box-shadow: 0 10px 24px -10px color-mix(in oklab, var(--color-primary) 80%, transparent); }
   body.has-tabbar:has(.dx-savebar) #scroll-to-top { display: none; }
 }
-
-/* ============================================================
-   Шапка — как до «жидкого стекла»: простое размытие без бликов и кромок (переопределяет блок выше).
-   Нижнее меню, шторки и выпадающие меню остаются стеклянными.
-   ============================================================ */
-.navbar.dx-glass-nav { background: transparent; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom-color: var(--color-base-300);
-  transition: background-color .25s ease, border-color .25s ease; }
-.dx-glass-nav::before, .dx-glass-nav.dx-nav--on-dark::before { content: none; }
-.navbar.dx-glass-nav.dx-nav--on-dark { background: rgba(12, 16, 28, .62); border-bottom-color: rgba(255, 255, 255, .12); }
-@media (max-width: 1023px) {
-  .navbar.dx-glass-nav { background: color-mix(in oklab, var(--color-base-100) 58%, transparent);
-    -webkit-backdrop-filter: saturate(180%) blur(26px); backdrop-filter: saturate(180%) blur(26px); }
-  .navbar.dx-glass-nav.dx-nav--on-dark { background: rgba(12, 16, 28, .62); }
-}
-/* Окно уведомлений внутри шапки — шторка снизу: на время открытия размытие у шапки снимаем, иначе шторка сдвигается. */
-html.nf-sheet-open .navbar.dx-glass-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
-/* У шапки снова своё размытие — выпадающие меню внутри неё размывать фон не могут, делаем их почти плотными. */
-:is(.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 97%; }
-:root[data-theme="dark"] :is(.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 96%; }
