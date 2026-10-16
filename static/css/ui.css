@@ -3242,3 +3242,8 @@ a.dx-pager__btn:active { transform: scale(.94); }
 @media (max-width: 1023px) {
   .dx-glass-nav::before { top: calc(-1 * max(env(safe-area-inset-top, 0px), 60px)); }
 }
+@media (max-width: 1023px) {
+  /* Размытие — на выступающем слое ::before (а не на самой шапке), чтобы стекло было и под часами. */
+  .navbar.dx-glass-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .dx-glass-nav::before { -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur); }
+}
