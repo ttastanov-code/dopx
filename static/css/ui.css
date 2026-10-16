@@ -3234,3 +3234,11 @@ a.dx-pager__btn:active { transform: scale(.94); }
   body.has-tabbar .dx-savebar .btn { box-shadow: 0 10px 24px -10px color-mix(in oklab, var(--color-primary) 80%, transparent); }
   body.has-tabbar:has(.dx-savebar) #scroll-to-top { display: none; }
 }
+
+/* Safari на iPhone (iOS 26): зону под часами браузер красит сам — сплошным цветом фона, если находит у верхнего края
+   плотный фиксированный слой, или показывает то, что нарисовано под ней. Хитрость: у шапки фон прозрачный (Safari его
+   не «берёт»), а стекло — на слое ::before, который выходит за верх экрана на высоту зоны часов. Так под часами
+   оказывается то же размытое стекло, что и в шапке. */
+@media (max-width: 1023px) {
+  .dx-glass-nav::before { top: calc(-1 * max(env(safe-area-inset-top, 0px), 60px)); }
+}
