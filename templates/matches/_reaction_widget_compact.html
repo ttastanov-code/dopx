@@ -2,7 +2,7 @@
 Реакция на сыгранный матч в строке списка: три значка с долями (Матч тура / Неожиданно / Скучный), hx-swap=outerHTML.
 Контекст: match, counts, my_reaction. Клик не всплывает к ссылке строки. Стили — css/match-card.css (mxr).
 {% endcomment %}
-<span id="reaction-widget-{{ match.id }}" class="mxr" onclick="event.preventDefault(); event.stopPropagation()" aria-label="Как болельщики оценили матч">
+<span id="reaction-widget-{{ match.id }}" class="mxr" onclick="event.preventDefault()" aria-label="Как болельщики оценили матч">
     <span class="mxr__q">{% if counts.total %}Матч по мнению трибун:{% else %}Какой это матч?{% endif %}</span>
     <button type="button" hx-post="{% url 'matches:react' match.id %}" hx-vals='{"reaction": "match_of_round"}' hx-target="#reaction-widget-{{ match.id }}" hx-swap="outerHTML"
             class="mxr__btn{% if my_reaction.reaction == 'match_of_round' %} is-on{% endif %}" title="Матч тура" aria-pressed="{% if my_reaction.reaction == 'match_of_round' %}true{% else %}false{% endif %}"><i class="ti ti-trophy"></i>Топ тура{% if counts.total %} <b>{{ counts.match_of_round_pct }}%</b>{% endif %}</button>

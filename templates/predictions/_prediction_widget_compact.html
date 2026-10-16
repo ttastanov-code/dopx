@@ -1,8 +1,9 @@
 {% comment %}
 Прогноз в строке матча (список): кнопки 1 · Х · 2, под ними доли, когда они уже есть. POST с compact=1 возвращает этот же блок.
-Контекст: match, counts, my_prediction. Клик не всплывает к ссылке строки. Стили — css/match-card.css (mxp).
+Контекст: match, counts, my_prediction. Клик не открывает страницу матча. Стили — css/match-card.css (mxp).
 {% endcomment %}
-<div id="prediction-widget-{{ match.id }}" class="mxp" onclick="event.preventDefault(); event.stopPropagation()">
+{# Клик внутри не открывает матч (строка — ссылка), но доходит до «Поделиться» (share.js слушает document). #}
+<div id="prediction-widget-{{ match.id }}" class="mxp" onclick="if (!event.target.closest('a.mxp__link')) event.preventDefault()">
     <div class="mxp__btns" role="group" aria-label="Прогноз: победа хозяев, ничья, победа гостей">
         {% include "predictions/_mxp_btn.html" with choice="1" label="1" pct=counts.home_pct name=match.home_team.name %}
         {% include "predictions/_mxp_btn.html" with choice="X" label="Х" pct=counts.draw_pct name="ничья" %}
@@ -16,7 +17,7 @@
     <div class="mxp__after">
         {% if challenge_url %}<button type="button" class="mxp__link" data-share data-share-url="{{ challenge_url }}"
                 data-share-text="Спорим, мой прогноз на {{ match.home_team.name }} — {{ match.away_team.name }} точнее? Сделай свой на DOPX"><i class="ti ti-swords"></i><span data-share-label>Вызов другу</span></button>{% endif %}
-        {% if next_match %}<a href="{% url 'matches:detail' next_match.id %}" class="mxp__link mxp__link--ghost" onclick="event.stopPropagation()">Далее · {{ left_count }}<i class="ti ti-arrow-right"></i></a>{% endif %}
+        {% if next_match %}<a href="{% url 'matches:detail' next_match.id %}" class="mxp__link mxp__link--ghost">Далее · {{ left_count }}<i class="ti ti-arrow-right"></i></a>{% endif %}
     </div>
     {% endif %}
 </div>
